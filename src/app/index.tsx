@@ -5,7 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabase } from '@/data/DatabaseProvider';
 import { getActiveProgramme } from '@/data/repositories/programmeRepository';
+import { createSessionExercise } from '@/data/repositories/sessionExerciseRepository';
 import { createSession, getActiveSession } from '@/data/repositories/sessionRepository';
+import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { listTemplatesForProgramme } from '@/data/repositories/templateRepository';
 import type { template } from '@/data/schema';
 import { strings } from '@/strings';
@@ -50,6 +52,20 @@ export default function HomeScreen() {
       note: null,
       source: 'manual',
     });
+    if (created && templateId) {
+      const templateExercises = await listTemplateExercisesByTemplate(db, userId, templateId);
+      for (const te of templateExercises.sort((a, b) => a.orderIndex - b.orderIndex)) {
+        await createSessionExercise(db, {
+          userId,
+          sessionId: created.id,
+          exerciseId: te.exerciseId,
+          orderIndex: te.orderIndex,
+          supersetGroupId: te.supersetGroupId,
+          note: null,
+          skippedAt: null,
+        });
+      }
+    }
     if (created) router.replace('/session');
     setStarting(false);
   }

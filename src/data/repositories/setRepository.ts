@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { newId } from '../id';
-import { setEntry } from '../schema';
+import { sessionExercise, setEntry } from '../schema';
 import type { AppDatabase } from '../types';
 
 export type NewSet = Omit<
@@ -40,6 +40,25 @@ export async function listSetsBySessionExercise(db: AppDatabase, userId: string,
         isNull(setEntry.deletedAt),
       ),
     );
+}
+
+// FR-3.4: raw material for inferring a per-exercise weight step (e.g. a
+// cable stack's ladder) from history when the exercise has no explicit
+// default step set.
+export async function listHistoricalWeightsForExercise(db: AppDatabase, userId: string, exerciseId: string) {
+  const rows = await db
+    .select({ weightKg: setEntry.weightKg })
+    .from(setEntry)
+    .innerJoin(sessionExercise, eq(sessionExercise.id, setEntry.sessionExerciseId))
+    .where(
+      and(
+        eq(setEntry.userId, userId),
+        eq(sessionExercise.exerciseId, exerciseId),
+        isNull(setEntry.deletedAt),
+        isNull(sessionExercise.deletedAt),
+      ),
+    );
+  return rows.map((r) => r.weightKg);
 }
 
 export async function updateSet(db: AppDatabase, userId: string, id: string, patch: SetUpdate) {

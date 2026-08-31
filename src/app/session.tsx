@@ -1,17 +1,41 @@
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AddExercisePanel } from '@/components/logging/AddExercisePanel';
+import { ExerciseBlock } from '@/components/logging/ExerciseBlock';
 import { useDatabase } from '@/data/DatabaseProvider';
-import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
+import { newId } from '@/data/id';
+import { getExerciseById, listExercises } from '@/data/repositories/exerciseRepository';
+import {
+  createSessionExercise,
+  listSessionExercisesBySession,
+  updateSessionExercise,
+} from '@/data/repositories/sessionExerciseRepository';
+import { endSession, getActiveSession, updateSession } from '@/data/repositories/sessionRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
-import type { session as sessionTable } from '@/data/schema';
+import type { exercise as exerciseTable, session as sessionTable, sessionExercise as sessionExerciseTable } from '@/data/schema';
 import { formatElapsed } from '@/domain/duration';
 import { strings } from '@/strings';
 import { theme } from '@/theme';
 
 type Session = typeof sessionTable.$inferSelect;
+type SessionExercise = typeof sessionExerciseTable.$inferSelect;
+type Exercise = typeof exerciseTable.$inferSelect;
+
+interface Item {
+  sessionExercise: SessionExercise;
+  exercise: Exercise;
+}
+
+function activeSorted(items: Item[]) {
+  return items.filter((it) => !it.sessionExercise.skippedAt).sort((a, b) => a.sessionExercise.orderIndex - b.sessionExercise.orderIndex);
+}
+
+function skippedSorted(items: Item[]) {
+  return items.filter((it) => it.sessionExercise.skippedAt).sort((a, b) => a.sessionExercise.orderIndex - b.sessionExercise.orderIndex);
+}
 
 export default function SessionScreen() {
   const { db, userId } = useDatabase();
@@ -22,16 +46,39 @@ export default function SessionScreen() {
   const [now, setNow] = useState(() => Date.now());
   const [ending, setEnding] = useState(false);
 
+  const [items, setItems] = useState<Item[]>([]);
+  const [allExercises, setAllExercises] = useState<Exercise[]>([]);
+  const [sessionNote, setSessionNote] = useState('');
+  const [addPanelOpen, setAddPanelOpen] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const active = await getActiveSession(db, userId);
       if (cancelled) return;
       setSession(active);
-      if (active?.templateId) {
+      if (!active) return;
+
+      setSessionNote(active.note ?? '');
+      if (active.templateId) {
         const t = await getTemplateById(db, userId, active.templateId);
         if (!cancelled && t) setHeading(t.name);
       }
+
+      const [sessionExercises, exercises] = await Promise.all([
+        listSessionExercisesBySession(db, userId, active.id),
+        listExercises(db, userId),
+      ]);
+      if (cancelled) return;
+      setAllExercises(exercises);
+
+      const exerciseById = new Map(exercises.map((e) => [e.id, e]));
+      const loadedItems: Item[] = [];
+      for (const se of sessionExercises) {
+        const ex = exerciseById.get(se.exerciseId) ?? (await getExerciseById(db, userId, se.exerciseId));
+        if (ex) loadedItems.push({ sessionExercise: se, exercise: ex });
+      }
+      if (!cancelled) setItems(loadedItems);
     })();
     return () => {
       cancelled = true;
@@ -50,6 +97,81 @@ export default function SessionScreen() {
     router.replace('/');
   }
 
+  function commitSessionNote() {
+    if (!session) return;
+    if (sessionNote === (session.note ?? '')) return;
+    void updateSession(db, userId, session.id, { note: sessionNote.length > 0 ? sessionNote : null });
+  }
+
+  function patchItem(updated: SessionExercise) {
+    setItems((prev) => prev.map((it) => (it.sessionExercise.id === updated.id ? { ...it, sessionExercise: updated } : it)));
+  }
+
+  async function handleSkipToggle(se: SessionExercise) {
+    const updated = await updateSessionExercise(db, userId, se.id, { skippedAt: se.skippedAt ? null : new Date() });
+    if (updated) patchItem(updated);
+  }
+
+  async function handleReorder(se: SessionExercise, direction: 'up' | 'down') {
+    const active = activeSorted(items);
+    const idx = active.findIndex((it) => it.sessionExercise.id === se.id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= active.length) return;
+
+    const a = active[idx].sessionExercise;
+    const b = active[swapIdx].sessionExercise;
+    const [updatedA, updatedB] = await Promise.all([
+      updateSessionExercise(db, userId, a.id, { orderIndex: b.orderIndex }),
+      updateSessionExercise(db, userId, b.id, { orderIndex: a.orderIndex }),
+    ]);
+    if (updatedA) patchItem(updatedA);
+    if (updatedB) patchItem(updatedB);
+  }
+
+  async function handleSupersetToggle(se: SessionExercise) {
+    if (se.supersetGroupId) {
+      const groupId = se.supersetGroupId;
+      const linked = items.filter((it) => it.sessionExercise.supersetGroupId === groupId);
+      const updated = await Promise.all(
+        linked.map((it) => updateSessionExercise(db, userId, it.sessionExercise.id, { supersetGroupId: null })),
+      );
+      updated.forEach((u) => u && patchItem(u));
+      return;
+    }
+
+    const active = activeSorted(items);
+    const idx = active.findIndex((it) => it.sessionExercise.id === se.id);
+    const partner = active[idx + 1];
+    if (!partner) return;
+
+    const groupId = newId();
+    const [updatedSe, updatedPartner] = await Promise.all([
+      updateSessionExercise(db, userId, se.id, { supersetGroupId: groupId }),
+      updateSessionExercise(db, userId, partner.sessionExercise.id, { supersetGroupId: groupId }),
+    ]);
+    if (updatedSe) patchItem(updatedSe);
+    if (updatedPartner) patchItem(updatedPartner);
+  }
+
+  async function handleExercisePicked(exercise: Exercise) {
+    if (!session) return;
+    const nextOrder = items.length > 0 ? Math.max(...items.map((it) => it.sessionExercise.orderIndex)) + 1 : 0;
+    const created = await createSessionExercise(db, {
+      userId,
+      sessionId: session.id,
+      exerciseId: exercise.id,
+      orderIndex: nextOrder,
+      supersetGroupId: null,
+      note: null,
+      skippedAt: null,
+    });
+    if (created) {
+      setItems((prev) => [...prev, { sessionExercise: created, exercise }]);
+      setAllExercises((prev) => (prev.some((e) => e.id === exercise.id) ? prev : [...prev, exercise]));
+    }
+    setAddPanelOpen(false);
+  }
+
   if (session === undefined) {
     return <SafeAreaView style={styles.safeArea} />;
   }
@@ -58,9 +180,12 @@ export default function SessionScreen() {
     return <Redirect href="/" />;
   }
 
+  const active = activeSorted(items);
+  const skipped = skippedSorted(items);
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.heading}>{heading}</Text>
 
         <View style={styles.elapsedBlock}>
@@ -68,12 +193,67 @@ export default function SessionScreen() {
           <Text style={styles.elapsedValue}>{formatElapsed(now - session.startedAt.getTime())}</Text>
         </View>
 
-        <Text style={styles.placeholder}>{strings.sessionLoggingPlaceholder}</Text>
+        <TextInput
+          style={styles.sessionNoteInput}
+          placeholder={strings.sessionNotePlaceholder}
+          placeholderTextColor={theme.color.textMuted}
+          value={sessionNote}
+          onChangeText={setSessionNote}
+          onBlur={commitSessionNote}
+        />
+
+        <View style={styles.exerciseList}>
+          {active.map((it, idx) => (
+            <ExerciseBlock
+              key={it.sessionExercise.id}
+              db={db}
+              userId={userId}
+              sessionId={session.id}
+              sessionExercise={it.sessionExercise}
+              exercise={it.exercise}
+              isSupersetLinked={it.sessionExercise.supersetGroupId != null}
+              canReorderUp={idx > 0}
+              canReorderDown={idx < active.length - 1}
+              onSkipToggle={() => handleSkipToggle(it.sessionExercise)}
+              onSupersetToggle={() => handleSupersetToggle(it.sessionExercise)}
+              onReorderUp={() => handleReorder(it.sessionExercise, 'up')}
+              onReorderDown={() => handleReorder(it.sessionExercise, 'down')}
+            />
+          ))}
+        </View>
+
+        {addPanelOpen ? (
+          <AddExercisePanel
+            db={db}
+            userId={userId}
+            existingExercises={allExercises}
+            onPick={handleExercisePicked}
+            onClose={() => setAddPanelOpen(false)}
+          />
+        ) : (
+          <Pressable style={styles.addExerciseButton} onPress={() => setAddPanelOpen(true)}>
+            <Text style={styles.addExerciseLabel}>{strings.sessionAddExerciseButton}</Text>
+          </Pressable>
+        )}
+
+        {skipped.length > 0 ? (
+          <View style={styles.skippedSection}>
+            <Text style={styles.skippedHeading}>{strings.exerciseSkippedHeading}</Text>
+            {skipped.map((it) => (
+              <Pressable
+                key={it.sessionExercise.id}
+                style={styles.skippedRow}
+                onPress={() => handleSkipToggle(it.sessionExercise)}>
+                <Text style={styles.skippedLabel}>{it.exercise.name}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         <Pressable style={styles.endButton} disabled={ending} onPress={handleEnd}>
           <Text style={styles.endButtonLabel}>{strings.sessionEndButton}</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -84,22 +264,18 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.bg,
   },
   container: {
-    flex: 1,
     padding: 20,
-    gap: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: 16,
   },
   heading: {
     color: theme.color.textPrimary,
     fontSize: 24,
     fontWeight: '800',
     textTransform: 'uppercase',
+    textAlign: 'center',
   },
   elapsedBlock: {
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 24,
   },
   elapsedLabel: {
     color: theme.color.textMuted,
@@ -108,23 +284,60 @@ const styles = StyleSheet.create({
   },
   elapsedValue: {
     color: theme.color.accentPrimary,
-    fontSize: 72,
+    fontSize: 56,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
-  placeholder: {
-    color: theme.color.textMuted,
+  sessionNoteInput: {
+    color: theme.color.textPrimary,
     fontSize: 14,
-    textAlign: 'center',
+    backgroundColor: theme.color.surface,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  exerciseList: {
+    gap: 16,
+  },
+  addExerciseButton: {
+    minHeight: theme.minTouchTarget,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.color.accentSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addExerciseLabel: {
+    color: theme.color.accentSecondary,
+    fontSize: 16,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  skippedSection: {
+    gap: 4,
+  },
+  skippedHeading: {
+    color: theme.color.textMuted,
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
+  skippedRow: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  skippedLabel: {
+    color: theme.color.textMuted,
+    fontSize: 15,
+    textDecorationLine: 'line-through',
   },
   endButton: {
     minHeight: theme.minTouchTarget,
-    minWidth: 200,
     borderRadius: 12,
     backgroundColor: theme.color.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 8,
   },
   endButtonLabel: {
     color: theme.color.textPrimary,

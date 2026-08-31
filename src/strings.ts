@@ -41,4 +41,36 @@ export const strings = {
   importSummary: (sessions: number, exercises: number, sets: number) =>
     `${sessions} sessions, ${exercises} exercises, ${sets} sets imported.`,
   importDoneButton: 'Done',
+
+  sessionNotePlaceholder: 'Session note…',
+  sessionAddExerciseButton: '+ Add exercise',
+
+  exerciseNotePlaceholder: 'Exercise note…',
+  exerciseAddSet: '+ Add set',
+  exerciseSkipToggle: 'SKIP',
+  exerciseSupersetToggle: 'SS',
+  exerciseSupersetBadge: 'Superset',
+  exerciseUnspecifiedMuscleGroup: 'Unspecified',
+  exerciseSkippedHeading: 'Skipped',
+
+  setWarmupToggle: 'Toggle warm-up',
+  setConfirm: 'Confirm set',
+  setAddDropSet: '+ Drop set',
+  setDropSetMarker: '↳',
+  setRepsUnit: 'reps',
+
+  keypadDone: 'Done',
+  keypadCancel: 'Cancel',
+  keypadWeightLabel: 'Weight (kg)',
+  keypadRepsLabel: 'Reps',
+
+  addExerciseTitle: 'Add exercise',
+  addExerciseClose: 'Close',
+  addExerciseSearchPlaceholder: 'Search exercises…',
+  addExerciseCreateAs: (name: string) => `Add "${name}" as new exercise`,
+  addExerciseMuscleGroupPlaceholder: 'Muscle group',
+  addExerciseEquipmentLabel: 'Equipment',
+  addExerciseConventionLabel: 'Load convention',
+  addExerciseConventionRequired: 'This equipment type varies by machine — choose the convention it uses.',
+  addExerciseCreateButton: 'Create and add',
 } as const;

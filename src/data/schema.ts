@@ -145,6 +145,8 @@ export const sessionExercise = sqliteTable('session_exercise', {
   orderIndex: integer('order_index').notNull().default(0),
   supersetGroupId: text('superset_group_id'),
   note: text('note'),
+  // Temporarily hidden from the active logging flow (machine occupied, etc.) — not a deletion. FR-3.11.
+  skippedAt: integer('skipped_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),

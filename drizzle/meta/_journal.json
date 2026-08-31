@@ -15,6 +15,13 @@
       "when": 1788141691386,
       "tag": "0001_sparkling_vector",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788146016121,
+      "tag": "0002_rich_spitfire",
+      "breakpoints": true
     }
   ]
 }

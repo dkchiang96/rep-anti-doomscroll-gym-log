@@ -1,7 +1,7 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 
 import { newId } from '../id';
-import { sessionExercise } from '../schema';
+import { session, sessionExercise } from '../schema';
 import type { AppDatabase } from '../types';
 
 export type NewSessionExercise = Omit<
@@ -55,6 +55,32 @@ export async function updateSessionExercise(
     .set({ ...patch, updatedAt: new Date() })
     .where(and(eq(sessionExercise.id, id), eq(sessionExercise.userId, userId)));
   return getSessionExerciseById(db, userId, id);
+}
+
+// FR-3.2: "last session" is the most recent OTHER session that performed
+// this exercise, by actual training date — never the same calendar weekday.
+export async function getMostRecentSessionExerciseForExercise(
+  db: AppDatabase,
+  userId: string,
+  exerciseId: string,
+  excludeSessionId: string,
+) {
+  const rows = await db
+    .select({ sessionExercise })
+    .from(sessionExercise)
+    .innerJoin(session, eq(session.id, sessionExercise.sessionId))
+    .where(
+      and(
+        eq(sessionExercise.userId, userId),
+        eq(sessionExercise.exerciseId, exerciseId),
+        ne(sessionExercise.sessionId, excludeSessionId),
+        isNull(sessionExercise.deletedAt),
+        isNull(session.deletedAt),
+      ),
+    )
+    .orderBy(desc(session.startedAt))
+    .limit(1);
+  return rows[0]?.sessionExercise ?? null;
 }
 
 export async function softDeleteSessionExercise(db: AppDatabase, userId: string, id: string) {

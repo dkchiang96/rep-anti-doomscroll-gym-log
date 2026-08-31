@@ -110,3 +110,36 @@ Replaced Expo's default scaffold navigation with REP's real navigation skeleton 
 **Verification:** `npm run typecheck` and `npm run test` pass (38 tests, up from 27). `npx expo export --platform android` still bundles with the scaffold removed and the new screens in place.
 
 **Commit:** `feat(session): lifecycle and crash restore`
+
+## 2026-08-31 — Session 4: the core logging loop
+
+Built out the full set-logging screen: ghost pre-fill from the last time an exercise was performed, one-tap confirm, steppers with long-press acceleration and tap-to-keypad, warm-up toggling, drop sets, superset linking, per-exercise/session notes, and mid-session add/skip/reorder — with FR-3.12's load-convention label and derived total permanently visible on every set row.
+
+**What shipped:**
+- Schema: added nullable `session_exercise.skipped_at` (nothing previously modeled "skipped, but not deleted"); migration `0002_rich_spitfire`.
+- `src/domain/loadConvention.ts` — pure `deriveLoadDisplay(convention, equipmentType, weightKg)`. `per_side` always shows a doubled, non-editable total line (FR-3.12.2); label is `PER DUMBBELL` for dumbbell equipment and the more generic `PER SIDE` for other per-side equipment (cable, single-leg work) so the wording stays accurate outside the FR's literal example.
+- `src/domain/weightStep.ts` — pure `inferWeightStep(weights)`. Detects a consistent ladder increment from historical weights by averaging across the whole run and validating each consecutive diff against that average, rather than taking a mode of raw diffs — needed because the PRD's own cable-ladder example (11.3/18.0/24.8/.../51.8) has diffs that alternate 6.7/6.8 from decimal rounding and would tie a naive mode search. Verified against that exact fixture (→ 6.75).
+- `src/domain/ghostPrefill.ts` — pure `buildGhostSets(previousSets)`. Re-indexes a previous session's sets from 0, keeping warm-ups and drop sets, and re-points a drop set's parent at its new position rather than the old (session-specific) DB id.
+- `src/domain/setRowOrdering.ts` — pure `orderRowsForDisplay(rows)`. Renders a drop set immediately under its parent regardless of storage order — needed because newly-added drop sets are always appended at the end of a session_exercise's sets, not spliced in next to their parent.
+- `src/data/repositories/sessionExerciseRepository.ts` — added `getMostRecentSessionExerciseForExercise` (FR-3.2: most recent *other* session containing the exercise, by training date, never weekday-anchored).
+- `src/data/repositories/setRepository.ts` — added `listHistoricalWeightsForExercise`, feeding the weight-step inference.
+- `src/components/logging/` — new: `Stepper` (long-press accelerates in two stages), `NumericKeypad` (modal direct entry, decimal-optional), `SetRow`, `ExerciseBlock` (owns one exercise's ghost/committed set state and merges them by index — a row is a ghost until confirmed, at which point confirming performs the one DB write FR-3.5 requires; every edit after that is an immediate `updateSet`), `AddExercisePanel` (inline search + create, no navigation away from the logging screen).
+- `src/app/session.tsx` — rewritten around `ExerciseBlock`s for each active `session_exercise`, a skip/superset/reorder header per block, a collapsed "Skipped" section at the bottom, a session note field, and the inline add-exercise panel.
+- `src/app/index.tsx` — starting a session from a template now copies its `template_exercise` rows into `session_exercise` (order and superset grouping preserved). This didn't exist after Session 3; without it, a template-started session opened with nothing to log.
+- Tests: `loadConvention`, `weightStep`, `ghostPrefill`, and `setRowOrdering` unit tests; new `src/data/repositories/__tests__/logging.test.ts` covering `getMostRecentSessionExerciseForExercise` (weekday-independence, current-session exclusion, soft-delete exclusion) and `listHistoricalWeightsForExercise`.
+
+**Deviations from the brief:**
+- **Reorder is up/down buttons, not drag-and-drop.** No drag-list dependency is installed and the brief didn't mandate a gesture; buttons satisfy "reordered mid-session" with zero new dependencies.
+- **Add-exercise mid-session is a minimal inline name search + create**, not the fuzzy/chip picker — that's explicitly Session 6's brief. Search is a case-insensitive substring match against name and aliases.
+- **`skipped_at` is a new column**, not something the existing schema modeled. Skipping hides an exercise from the active flow (machine occupied) without deleting it; tapping it in the "Skipped" section un-skips it back into the active list.
+- **Ghost sets must be confirmed in order, top to bottom** (only the next unconfirmed ghost row is interactive; later ones are a muted preview). This keeps each `session_exercise`'s stored `index` values exactly equal to their array position, which is what lets `setRowOrdering` correctly re-attach drop sets appended later. Not a brief requirement, just how the confirm flow is gated.
+- **Superset linking only pairs an exercise with the next one in the active list** (tap again to unlink). No arbitrary multi-select grouping UI — kept to a single quick toggle appropriate for a mid-session action.
+- **No dedicated `failure` set-type UI.** The schema/domain still support it, but only the warm-up `W` toggle was in the brief's explicit Do list; a failure toggle would be new UI the brief didn't ask for.
+- **Bar weight and the plate calculator are untouched.** FR-3.13 (plate calculator) is BUILD-SESSIONS.md's Session 8, not this one — new barbell exercises can be created here with `bar_weight_kg` left null; Session 8 owns prompting for it.
+- **Weight-step inference is computed on the fly, never written back to `exercise.default_weight_step`.** Persisting an inferred number would be guessing a value into stored data; it's recomputed each time the exercise screen loads until the user (in a later session) sets an explicit default.
+- Verified via `npm run typecheck`, `npm run test` (60 tests, up from 38), and `npx expo export --platform android`, not a live device/emulator session — there is still no emulator in this environment. The 90-second/7-exercise exit check itself needs a manual on-device run.
+- Running `npm run lint` for the first time in this repo auto-generated `eslint.config.js` (expo's "no config found, configuring automatically" flow) — left in place since it's harmless and un-opinionated, but flagging it as an incidental addition, not a planned one.
+
+**Exit check:** typecheck and full test suite pass; Android bundle exports cleanly with all new screens/components. The literal "log a full push session in under 90 seconds" timing check needs a real device — worth doing before Session 5.
+
+**Commit:** `feat(logging): core set loop`
