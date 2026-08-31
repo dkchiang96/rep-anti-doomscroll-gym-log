@@ -36,6 +36,24 @@ export default function RootLayout() {
               headerTintColor: theme.color.textPrimary,
             }}
           />
+          <Stack.Screen
+            name="programmes"
+            options={{
+              headerShown: true,
+              title: strings.programmesTitle,
+              headerStyle: { backgroundColor: theme.color.bg },
+              headerTintColor: theme.color.textPrimary,
+            }}
+          />
+          <Stack.Screen
+            name="import-programme"
+            options={{
+              headerShown: true,
+              title: strings.programmeImportTitle,
+              headerStyle: { backgroundColor: theme.color.bg },
+              headerTintColor: theme.color.textPrimary,
+            }}
+          />
         </Stack>
       </DatabaseProvider>
     </ThemeProvider>

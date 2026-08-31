@@ -99,6 +99,10 @@ export default function HomeScreen() {
           <Text style={styles.freestyleLabel}>{strings.homeFreestyleLabel}</Text>
         </Pressable>
 
+        <Pressable style={styles.importLink} onPress={() => router.push('/programmes')}>
+          <Text style={styles.importLinkLabel}>{strings.homeProgrammesLink}</Text>
+        </Pressable>
+
         <Pressable style={styles.importLink} onPress={() => router.push('/import')}>
           <Text style={styles.importLinkLabel}>{strings.homeImportLink}</Text>
         </Pressable>

@@ -51,6 +51,18 @@ export async function updateProgramme(db: AppDatabase, userId: string, id: strin
   return getProgrammeById(db, userId, id);
 }
 
+// FR-5.2: exactly one programme is active at a time — deactivate every
+// other programme before activating this one.
+export async function setActiveProgramme(db: AppDatabase, userId: string, id: string) {
+  const now = new Date();
+  await db.update(programme).set({ isActive: false, updatedAt: now }).where(eq(programme.userId, userId));
+  await db
+    .update(programme)
+    .set({ isActive: true, updatedAt: now })
+    .where(and(eq(programme.id, id), eq(programme.userId, userId)));
+  return getProgrammeById(db, userId, id);
+}
+
 export async function archiveProgramme(db: AppDatabase, userId: string, id: string) {
   const now = new Date();
   await db

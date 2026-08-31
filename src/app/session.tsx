@@ -1,10 +1,10 @@
 import { Redirect, useRouter } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ExerciseBlock } from '@/components/logging/ExerciseBlock';
+import { ExerciseBlock, type ExerciseTarget } from '@/components/logging/ExerciseBlock';
 import { ExercisePicker } from '@/components/logging/ExercisePicker';
 import { RestClock } from '@/components/logging/RestClock';
 import { RestFlashOverlay } from '@/components/logging/RestFlashOverlay';
@@ -18,7 +18,9 @@ import {
   updateSessionExercise,
 } from '@/data/repositories/sessionExerciseRepository';
 import { endSession, getActiveSession, updateSession } from '@/data/repositories/sessionRepository';
+import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
+import { createTemplateFromSession } from '@/data/repositories/templateFromSessionRepository';
 import { getUser, updateRestSettings } from '@/data/repositories/userRepository';
 import type { exercise as exerciseTable, session as sessionTable, sessionExercise as sessionExerciseTable } from '@/data/schema';
 import { formatElapsed } from '@/domain/duration';
@@ -29,6 +31,16 @@ import { theme } from '@/theme';
 type Session = typeof sessionTable.$inferSelect;
 type SessionExercise = typeof sessionExerciseTable.$inferSelect;
 type Exercise = typeof exerciseTable.$inferSelect;
+
+interface Progress {
+  committed: number;
+  ghost: number;
+}
+
+function isComplete(progress: Progress | undefined): boolean {
+  if (!progress) return false;
+  return progress.ghost > 0 ? progress.committed >= progress.ghost : progress.committed > 0;
+}
 
 interface Item {
   sessionExercise: SessionExercise;
@@ -70,6 +82,16 @@ export default function SessionScreen() {
   const [restStartedAt, setRestStartedAt] = useState<number | null>(null);
   const [restTargetSeconds, setRestTargetSeconds] = useState<number | null>(null);
 
+  const [targetsByExerciseId, setTargetsByExerciseId] = useState<Map<string, ExerciseTarget>>(new Map());
+  const [progressBySessionExerciseId, setProgressBySessionExerciseId] = useState<Map<string, Progress>>(new Map());
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState('');
+  const [saveTemplateSaved, setSaveTemplateSaved] = useState(false);
+
+  const scrollViewRef = useRef<ScrollView>(null);
+  const exerciseListYRef = useRef(0);
+  const blockYRef = useRef(new Map<string, number>());
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -80,8 +102,20 @@ export default function SessionScreen() {
 
       setSessionNote(active.note ?? '');
       if (active.templateId) {
-        const t = await getTemplateById(db, userId, active.templateId);
-        if (!cancelled && t) setHeading(t.name);
+        const [t, templateExercises] = await Promise.all([
+          getTemplateById(db, userId, active.templateId),
+          listTemplateExercisesByTemplate(db, userId, active.templateId),
+        ]);
+        if (cancelled) return;
+        if (t) setHeading(t.name);
+        setTargetsByExerciseId(
+          new Map(
+            templateExercises.map((te) => [
+              te.exerciseId,
+              { targetSets: te.targetSets, targetRepsMin: te.targetRepsMin, targetRepsMax: te.targetRepsMax },
+            ]),
+          ),
+        );
       }
 
       const [sessionExercises, exercises, user] = await Promise.all([
@@ -151,6 +185,31 @@ export default function SessionScreen() {
     if (!session) return;
     if (sessionNote === (session.note ?? '')) return;
     void updateSession(db, userId, session.id, { note: sessionNote.length > 0 ? sessionNote : null });
+  }
+
+  function handleProgressChanged(sessionExerciseId: string, committed: number, ghost: number) {
+    setProgressBySessionExerciseId((prev) => {
+      const next = new Map(prev);
+      next.set(sessionExerciseId, { committed, ghost });
+      return next;
+    });
+  }
+
+  function scrollToBlock(sessionExerciseId: string) {
+    const y = exerciseListYRef.current + (blockYRef.current.get(sessionExerciseId) ?? 0);
+    scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+  }
+
+  async function handleSaveAsTemplate() {
+    if (!session) return;
+    const name = saveTemplateName.trim();
+    if (name.length === 0) return;
+    const created = await createTemplateFromSession(db, userId, session.id, name, session.programmeId, 0);
+    if (created) {
+      setSaveTemplateSaved(true);
+      setSaveTemplateOpen(false);
+      setSaveTemplateName('');
+    }
   }
 
   function patchItem(updated: SessionExercise) {
@@ -250,13 +309,32 @@ export default function SessionScreen() {
         cameraReady={restClock.cameraReady}
         torchOn={restClock.torchOn}
       />
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.container}>
         <Text style={styles.heading}>{heading}</Text>
 
         <View style={styles.elapsedBlock}>
           <Text style={styles.elapsedLabel}>{strings.sessionElapsedLabel}</Text>
           <Text style={styles.elapsedValue}>{formatElapsed(now - session.startedAt.getTime())}</Text>
         </View>
+
+        {session.templateId && active.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.planStrip}>
+            <View style={styles.planStripRow}>
+              {active.map((it) => {
+                const done = isComplete(progressBySessionExerciseId.get(it.sessionExercise.id));
+                return (
+                  <Pressable
+                    key={it.sessionExercise.id}
+                    style={[styles.planChip, done && styles.planChipDone]}
+                    accessibilityLabel={strings.sessionPlanStripJumpAccessibility}
+                    onPress={() => scrollToBlock(it.sessionExercise.id)}>
+                    <Text style={[styles.planChipLabel, done && styles.planChipLabelDone]}>{it.exercise.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        ) : null}
 
         <RestClock
           elapsedMs={restClock.elapsedMs}
@@ -275,25 +353,28 @@ export default function SessionScreen() {
           onBlur={commitSessionNote}
         />
 
-        <View style={styles.exerciseList}>
+        <View style={styles.exerciseList} onLayout={(e) => (exerciseListYRef.current = e.nativeEvent.layout.y)}>
           {active.map((it, idx) => (
-            <ExerciseBlock
-              key={it.sessionExercise.id}
-              db={db}
-              userId={userId}
-              sessionId={session.id}
-              sessionExercise={it.sessionExercise}
-              exercise={it.exercise}
-              isSupersetLinked={it.sessionExercise.supersetGroupId != null}
-              canReorderUp={idx > 0}
-              canReorderDown={idx < active.length - 1}
-              onSkipToggle={() => handleSkipToggle(it.sessionExercise)}
-              onSupersetToggle={() => handleSupersetToggle(it.sessionExercise)}
-              onReorderUp={() => handleReorder(it.sessionExercise, 'up')}
-              onReorderDown={() => handleReorder(it.sessionExercise, 'down')}
-              onSetCommitted={() => handleSetCommitted(it)}
-              onExerciseUpdated={handleExerciseUpdated}
-            />
+            <View key={it.sessionExercise.id} onLayout={(e) => blockYRef.current.set(it.sessionExercise.id, e.nativeEvent.layout.y)}>
+              <ExerciseBlock
+                db={db}
+                userId={userId}
+                sessionId={session.id}
+                sessionExercise={it.sessionExercise}
+                exercise={it.exercise}
+                isSupersetLinked={it.sessionExercise.supersetGroupId != null}
+                canReorderUp={idx > 0}
+                canReorderDown={idx < active.length - 1}
+                target={targetsByExerciseId.get(it.exercise.id) ?? null}
+                onSkipToggle={() => handleSkipToggle(it.sessionExercise)}
+                onSupersetToggle={() => handleSupersetToggle(it.sessionExercise)}
+                onReorderUp={() => handleReorder(it.sessionExercise, 'up')}
+                onReorderDown={() => handleReorder(it.sessionExercise, 'down')}
+                onSetCommitted={() => handleSetCommitted(it)}
+                onExerciseUpdated={handleExerciseUpdated}
+                onProgressChanged={(committed, ghost) => handleProgressChanged(it.sessionExercise.id, committed, ghost)}
+              />
+            </View>
           ))}
         </View>
 
@@ -324,6 +405,32 @@ export default function SessionScreen() {
             ))}
           </View>
         ) : null}
+
+        {saveTemplateOpen ? (
+          <View style={styles.saveTemplateBox}>
+            <TextInput
+              style={styles.sessionNoteInput}
+              value={saveTemplateName}
+              onChangeText={setSaveTemplateName}
+              placeholder={strings.sessionSaveTemplateNamePlaceholder}
+              placeholderTextColor={theme.color.textMuted}
+              autoFocus
+            />
+            <View style={styles.saveTemplateActions}>
+              <Pressable style={styles.secondaryButtonSmall} onPress={() => setSaveTemplateOpen(false)}>
+                <Text style={styles.secondaryButtonSmallLabel}>{strings.sessionSaveTemplateCancel}</Text>
+              </Pressable>
+              <Pressable style={styles.primaryButtonSmall} onPress={handleSaveAsTemplate}>
+                <Text style={styles.primaryButtonSmallLabel}>{strings.sessionSaveTemplateConfirm}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable style={styles.saveTemplateLink} onPress={() => setSaveTemplateOpen(true)}>
+            <Text style={styles.saveTemplateLinkLabel}>{strings.sessionSaveTemplateButton}</Text>
+          </Pressable>
+        )}
+        {saveTemplateSaved ? <Text style={styles.saveTemplateSavedText}>{strings.sessionSaveTemplateSaved}</Text> : null}
 
         <Pressable style={styles.endButton} disabled={ending} onPress={handleEnd}>
           <Text style={styles.endButtonLabel}>{strings.sessionEndButton}</Text>
@@ -370,6 +477,34 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  planStrip: {
+    maxHeight: 44,
+  },
+  planStripRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  planChip: {
+    minHeight: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: theme.color.accentPrimary,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+  },
+  planChipDone: {
+    borderColor: theme.color.textMuted,
+    opacity: 0.5,
+  },
+  planChipLabel: {
+    color: theme.color.accentPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  planChipLabelDone: {
+    color: theme.color.textMuted,
   },
   exerciseList: {
     gap: 16,
@@ -419,5 +554,55 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  saveTemplateLink: {
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveTemplateLinkLabel: {
+    color: theme.color.textMuted,
+    fontSize: 13,
+    textDecorationLine: 'underline',
+  },
+  saveTemplateBox: {
+    gap: 8,
+  },
+  saveTemplateActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  saveTemplateSavedText: {
+    color: theme.color.accentSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  primaryButtonSmall: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: theme.color.accentPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonSmallLabel: {
+    color: theme.color.bg,
+    fontSize: 14,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  secondaryButtonSmall: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.color.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonSmallLabel: {
+    color: theme.color.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

@@ -17,6 +17,8 @@ interface SetRowProps {
   conventionLabel: string;
   totalLine: string | null;
   weightStep: number;
+  /** FR-5.7: a faint programme target shown only on the active (next-to-fill) row. */
+  targetLabel?: string | null;
   onWeightChange: (newWeight: number) => void;
   onRepsChange: (newReps: number) => void;
   onToggleWarmup: () => void;
@@ -40,6 +42,7 @@ export function SetRow({
   conventionLabel,
   totalLine,
   weightStep,
+  targetLabel,
   onWeightChange,
   onRepsChange,
   onToggleWarmup,
@@ -73,13 +76,16 @@ export function SetRow({
           {totalLine ? <Text style={[styles.totalLine, isGhost && styles.mutedText]}>{totalLine}</Text> : null}
         </View>
 
-        <Stepper
-          value={String(reps)}
-          disabled={disabled}
-          onStep={(dir) => onRepsChange(Math.max(0, reps + dir))}
-          onTapValue={() => onOpenKeypad('reps')}
-          unitLabel={strings.setRepsUnit}
-        />
+        <View>
+          <Stepper
+            value={String(reps)}
+            disabled={disabled}
+            onStep={(dir) => onRepsChange(Math.max(0, reps + dir))}
+            onTapValue={() => onOpenKeypad('reps')}
+            unitLabel={strings.setRepsUnit}
+          />
+          {targetLabel ? <Text style={styles.targetLabel}>{targetLabel}</Text> : null}
+        </View>
 
         {isGhost && !disabled ? (
           <Pressable style={styles.confirmButton} onPress={onConfirm} accessibilityLabel={strings.setConfirm}>
@@ -155,6 +161,12 @@ const styles = StyleSheet.create({
   totalLine: {
     color: theme.color.textMuted,
     fontSize: 11,
+  },
+  targetLabel: {
+    color: theme.color.textMuted,
+    fontSize: 10,
+    textAlign: 'center',
+    opacity: 0.7,
   },
   confirmButton: {
     width: theme.minTouchTarget,

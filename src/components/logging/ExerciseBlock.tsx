@@ -40,6 +40,12 @@ interface MergedRow {
   parentIndex: number | null;
 }
 
+export interface ExerciseTarget {
+  targetSets: number;
+  targetRepsMin: number;
+  targetRepsMax: number;
+}
+
 interface ExerciseBlockProps {
   db: AppDatabase;
   userId: string;
@@ -49,12 +55,16 @@ interface ExerciseBlockProps {
   isSupersetLinked: boolean;
   canReorderUp: boolean;
   canReorderDown: boolean;
+  /** FR-5.7: programme target for this exercise, when the session runs from a template. Advisory only — never pre-fills or blocks a value. */
+  target?: ExerciseTarget | null;
   onSkipToggle: () => void;
   onSupersetToggle: () => void;
   onReorderUp: () => void;
   onReorderDown: () => void;
   onSetCommitted: () => void;
   onExerciseUpdated: (updated: Exercise) => void;
+  /** FR-5.6: lets the session plan strip know how far along this exercise is. */
+  onProgressChanged?: (committedCount: number, ghostCount: number) => void;
 }
 
 export function ExerciseBlock({
@@ -66,12 +76,14 @@ export function ExerciseBlock({
   isSupersetLinked,
   canReorderUp,
   canReorderDown,
+  target,
   onSkipToggle,
   onSupersetToggle,
   onReorderUp,
   onReorderDown,
   onSetCommitted,
   onExerciseUpdated,
+  onProgressChanged,
 }: ExerciseBlockProps) {
   const [committedSets, setCommittedSets] = useState<CommittedSet[]>([]);
   const [ghostSets, setGhostSets] = useState<GhostSet[]>([]);
@@ -151,6 +163,12 @@ export function ExerciseBlock({
 
   const rowsByIndex = useMemo(() => new Map(mergedRows.map((r) => [r.rowIndex, r])), [mergedRows]);
   const nextGhostIndex = committedSets.length;
+
+  useEffect(() => {
+    if (!loaded) return;
+    onProgressChanged?.(committedSets.length, ghostSets.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, committedSets.length, ghostSets.length]);
 
   async function commitNewSet(input: {
     weightKg: number;
@@ -266,6 +284,11 @@ export function ExerciseBlock({
       <View style={styles.header}>
         <View style={styles.headerTitleBlock}>
           <Text style={styles.name}>{ex.name}</Text>
+          {target ? (
+            <Text style={styles.targetLabel}>
+              {strings.targetSetsRepsLabel(target.targetSets, target.targetRepsMin, target.targetRepsMax)}
+            </Text>
+          ) : null}
           {isSupersetLinked ? <Text style={styles.supersetBadge}>{strings.exerciseSupersetBadge}</Text> : null}
           <Pressable onPress={() => setRestKeypadOpen(true)}>
             <Text style={styles.targetRestLabel}>
@@ -309,6 +332,10 @@ export function ExerciseBlock({
             const label = isDropSet ? strings.setDropSetMarker : String(++topLevelCounter);
             const disabled = row.isGhost && row.rowIndex !== nextGhostIndex;
             const display = deriveLoadDisplay(ex.loadConvention, ex.equipmentType, row.weightKg);
+            // FR-5.7: the faint target appears only on the one row currently being filled in.
+            const isActiveRow = !isDropSet && row.rowIndex === nextGhostIndex;
+            const targetLabel =
+              target && isActiveRow ? strings.targetSetsRepsLabel(target.targetSets, target.targetRepsMin, target.targetRepsMax) : null;
 
             return (
               <SetRow
@@ -319,6 +346,7 @@ export function ExerciseBlock({
                 setType={row.setType}
                 isGhost={row.isGhost}
                 isDropSet={isDropSet}
+                targetLabel={targetLabel}
                 disabled={disabled}
                 conventionLabel={display.conventionLabel}
                 totalLine={display.totalLine}
@@ -388,6 +416,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  targetLabel: {
+    color: theme.color.accentPrimary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   targetRestLabel: {
     color: theme.color.textMuted,
