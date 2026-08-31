@@ -49,3 +49,16 @@ export async function softDeleteExercise(db: AppDatabase, userId: string, id: st
     .set({ deletedAt: now, updatedAt: now })
     .where(and(eq(exercise.id, id), eq(exercise.userId, userId)));
 }
+
+// FR-2.4: feeds the picker's frequency/recency ranking. Called whenever an
+// exercise is picked into a session, not on every set within it.
+export async function recordExerciseUsage(db: AppDatabase, userId: string, id: string) {
+  const current = await getExerciseById(db, userId, id);
+  if (!current) return null;
+  const now = new Date();
+  await db
+    .update(exercise)
+    .set({ useCount: current.useCount + 1, lastUsedAt: now, updatedAt: now })
+    .where(and(eq(exercise.id, id), eq(exercise.userId, userId)));
+  return getExerciseById(db, userId, id);
+}

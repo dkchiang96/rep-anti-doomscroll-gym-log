@@ -168,3 +168,25 @@ Built the auto-starting rest clock (FR-4.1–4.7): count-up timer, 30s-default f
 **Exit check:** `npm run typecheck` and `npm run test` pass (68 tests, up from 60). `npx expo export --platform android` and `--platform web` both still bundle cleanly with the new native modules and the beep asset picked up. The literal "complete a session without leaving the logging screen and without the display sleeping" and "flash visible from 1.5m in peripheral vision" checks need a real device — worth doing before Session 6.
 
 **Commit:** `feat(timer): rest clock and flash cue`
+
+## 2026-08-31 — Session 6: exercise picker
+
+Built the real FR-2.1–2.4 picker (muscle-group chips, fuzzy type-ahead, inline create, frequency/recency ranking), replacing Session 4's placeholder inline search-and-create panel.
+
+**What shipped:**
+- `src/domain/muscleGroups.ts` — the fixed FR-2.1 taxonomy (Chest, Back, Shoulders, Biceps, Triceps, Quads, Hamstrings, Glutes, Calves, Core) plus `resolveMuscleGroupChip()`, mapping any stored `muscle_group` string to one of the 10 canonical chips or an **Other** catch-all.
+- `src/domain/fuzzyMatch.ts` — pure `matchExercises(query, exercises)`, a hand-rolled token-level Levenshtein matcher (no new dependency) against name + aliases. Tested against the PRD's own `pull back row machinr` example and other typo/dropped-letter cases using real fixture exercise names.
+- `src/domain/exerciseRanking.ts` — pure `rankExercises(exercises, now)` combining `useCount` (frequency, dominant term) with a 14-day-half-life recency decay from `lastUsedAt`; alphabetical tiebreak for untouched exercises.
+- `src/data/repositories/exerciseRepository.ts` — added `recordExerciseUsage()`. Nothing previously wrote to `use_count`/`last_used_at` anywhere in the app — FR-2.4's ranking had no data to rank by. Now called every time an exercise is picked into a session (`session.tsx`'s `handleExercisePicked`).
+- `src/components/logging/ExercisePicker.tsx` (replaces `AddExercisePanel.tsx`) — chips always rendered first per FR-2.1 ("never an undifferentiated list": with no chip selected and no search text, only chips show, no list). Autofocused search below the chips **searches the whole library regardless of the active chip** and ranks by fuzzy-match score; browsing via a chip (empty search) lists that chip's exercises ranked by frequency/recency. Inline "Add [text] as new exercise" is unchanged in spirit from Session 4 (equipment type → load-convention default, explicit choice required when the default is ambiguous) but muscle group is now locked to the active chip — creation is blocked with a prompt until a real chip (not "Other") is selected, rather than the old free-text muscle-group field.
+- Tests: `muscleGroups.test.ts`, `fuzzyMatch.test.ts`, `exerciseRanking.test.ts`, `exerciseUsage.test.ts`.
+
+**Deviations from the brief:**
+- **Legacy muscle-group data isn't reclassified.** The Session 2 importer keyword-guessed coarser categories (`Legs`, `Arms`, `Cardio`, `Uncategorised`) for ~25 historical exercises, none of which match the PRD's fixed 10-name taxonomy. Rather than guessing a reclassification into stored data, those exercises fall under an 11th **Other** browse-only chip (can't be used as a creation target). Confirmed with the user before building. A one-time reclassification UI is still open for a later session if it turns out to matter.
+- **No new screen/route.** The picker is still the same inline panel pattern from Session 4 (rendered inside `session.tsx` below the exercise list), not a dedicated full-screen route — nothing in the brief or FR-2.x requires one, and it keeps the "no back button, logging screen only" shape of the app intact.
+- **Search and chip-browse rank independently.** Typing a query ranks purely by fuzzy-match relevance (ignores the active chip and frequency/recency) so a typo always resolves to the closest name regardless of how often it's been used; only the chip-browse (empty query) list uses `rankExercises`. Not explicitly specified by the FRs, but "any exercise reachable in under 3 seconds" reads as a relevance guarantee, not a frequency one.
+- **No bundled exercise database and no new dependency for fuzzy matching** — both explicitly out of scope / avoided per the brief and CLAUDE.md's preference for pure, tested `src/domain/` functions over new packages for a ~25-exercise library.
+
+**Exit check:** `npm run typecheck` and `npm run test` pass (83 tests, up from 68). `npx expo export --platform android` still bundles cleanly with the old component removed and the new one in place. The literal "reachable in under 3 seconds" and "created without leaving the picker" checks need a real device — worth doing before Session 7.
+
+**Commit:** `feat(exercises): picker and inline create`

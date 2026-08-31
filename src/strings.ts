@@ -81,7 +81,7 @@ export const strings = {
   addExerciseClose: 'Close',
   addExerciseSearchPlaceholder: 'Search exercises…',
   addExerciseCreateAs: (name: string) => `Add "${name}" as new exercise`,
-  addExerciseMuscleGroupPlaceholder: 'Muscle group',
+  addExerciseMuscleGroupRequired: 'Pick a muscle group above to create this exercise.',
   addExerciseEquipmentLabel: 'Equipment',
   addExerciseConventionLabel: 'Load convention',
   addExerciseConventionRequired: 'This equipment type varies by machine — choose the convention it uses.',

@@ -4,6 +4,9 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { createExercise } from '@/data/repositories/exerciseRepository';
 import type { exercise } from '@/data/schema';
 import type { AppDatabase } from '@/data/types';
+import { matchExercises } from '@/domain/fuzzyMatch';
+import { rankExercises } from '@/domain/exerciseRanking';
+import { MUSCLE_GROUPS, OTHER_MUSCLE_GROUP_CHIP, resolveMuscleGroupChip, type MuscleGroupChip } from '@/domain/muscleGroups';
 import type { EquipmentType, LoadConvention } from '@/domain/loadConvention';
 import { strings } from '@/strings';
 import { theme } from '@/theme';
@@ -39,7 +42,7 @@ function defaultConventionFor(equipmentType: EquipmentType): LoadConvention | nu
   }
 }
 
-interface AddExercisePanelProps {
+interface ExercisePickerProps {
   db: AppDatabase;
   userId: string;
   existingExercises: Exercise[];
@@ -47,36 +50,51 @@ interface AddExercisePanelProps {
   onClose: () => void;
 }
 
-export function AddExercisePanel({ db, userId, existingExercises, onPick, onClose }: AddExercisePanelProps) {
+export function ExercisePicker({ db, userId, existingExercises, onPick, onClose }: ExercisePickerProps) {
   const [query, setQuery] = useState('');
+  const [activeChip, setActiveChip] = useState<MuscleGroupChip | null>(null);
   const [creating, setCreating] = useState(false);
-  const [muscleGroup, setMuscleGroup] = useState('');
   const [equipmentType, setEquipmentType] = useState<EquipmentType>('barbell');
   const [loadConvention, setLoadConvention] = useState<LoadConvention | null>(
     defaultConventionFor('barbell'),
   );
 
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q.length === 0) return [];
-    return existingExercises
-      .filter((e) => e.name.toLowerCase().includes(q) || e.aliases.some((a) => a.toLowerCase().includes(q)))
-      .slice(0, 8);
+  // FR-2.2: search ignores the active chip entirely — a legacy free-text
+  // muscle_group value (e.g. the importer's "Legs") must never make an
+  // exercise unreachable, since chip filtering below only recognises the
+  // fixed FR-2.1 taxonomy.
+  const searchResults = useMemo(() => {
+    if (query.trim().length === 0) return [];
+    return matchExercises(query, existingExercises).map((m) => m.exercise);
   }, [existingExercises, query]);
+
+  const browseResults = useMemo(() => {
+    if (query.trim().length > 0 || activeChip == null) return [];
+    const inChip = existingExercises.filter((e) => resolveMuscleGroupChip(e.muscleGroup) === activeChip);
+    return rankExercises(inChip);
+  }, [existingExercises, query, activeChip]);
+
+  const results = query.trim().length > 0 ? searchResults : browseResults;
 
   function selectEquipmentType(type: EquipmentType) {
     setEquipmentType(type);
     setLoadConvention(defaultConventionFor(type));
   }
 
+  function handlePick(picked: Exercise) {
+    onPick(picked);
+  }
+
   async function handleCreate() {
     const name = query.trim();
-    if (name.length === 0 || loadConvention == null) return;
+    if (name.length === 0 || loadConvention == null || activeChip == null || activeChip === OTHER_MUSCLE_GROUP_CHIP) {
+      return;
+    }
     const created = await createExercise(db, {
       userId,
       name,
       aliases: [],
-      muscleGroup: muscleGroup.trim().length > 0 ? muscleGroup.trim() : strings.exerciseUnspecifiedMuscleGroup,
+      muscleGroup: activeChip,
       equipmentType,
       loadConvention,
       barWeightKg: null,
@@ -84,8 +102,10 @@ export function AddExercisePanel({ db, userId, existingExercises, onPick, onClos
       source: 'user',
       lastUsedAt: null,
     });
-    if (created) onPick(created);
+    if (created) handlePick(created);
   }
+
+  const canCreate = activeChip != null && activeChip !== OTHER_MUSCLE_GROUP_CHIP;
 
   return (
     <View style={styles.container}>
@@ -95,6 +115,21 @@ export function AddExercisePanel({ db, userId, existingExercises, onPick, onClos
           <Text style={styles.closeLabel}>{strings.addExerciseClose}</Text>
         </Pressable>
       </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.chipRow}>
+          {[...MUSCLE_GROUPS, OTHER_MUSCLE_GROUP_CHIP].map((group) => (
+            <Pressable
+              key={group}
+              style={[styles.chip, activeChip === group && styles.chipActive]}
+              onPress={() => setActiveChip((prev) => (prev === group ? null : group))}>
+              <Text style={[styles.chipLabel, activeChip === group && styles.chipLabelActive]}>
+                {group.toUpperCase()}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
 
       <TextInput
         style={styles.searchInput}
@@ -108,17 +143,17 @@ export function AddExercisePanel({ db, userId, existingExercises, onPick, onClos
         autoFocus
       />
 
-      {matches.length > 0 ? (
+      {results.length > 0 ? (
         <View style={styles.results}>
-          {matches.map((m) => (
-            <Pressable key={m.id} style={styles.resultRow} onPress={() => onPick(m)}>
+          {results.map((m) => (
+            <Pressable key={m.id} style={styles.resultRow} onPress={() => handlePick(m)}>
               <Text style={styles.resultLabel}>{m.name}</Text>
             </Pressable>
           ))}
         </View>
       ) : null}
 
-      {query.trim().length > 0 && matches.length === 0 && !creating ? (
+      {query.trim().length > 0 && searchResults.length === 0 && !creating ? (
         <Pressable style={styles.createPrompt} onPress={() => setCreating(true)}>
           <Text style={styles.createPromptLabel}>{strings.addExerciseCreateAs(query.trim())}</Text>
         </Pressable>
@@ -126,13 +161,7 @@ export function AddExercisePanel({ db, userId, existingExercises, onPick, onClos
 
       {creating ? (
         <View style={styles.createForm}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder={strings.addExerciseMuscleGroupPlaceholder}
-            placeholderTextColor={theme.color.textMuted}
-            value={muscleGroup}
-            onChangeText={setMuscleGroup}
-          />
+          {!canCreate ? <Text style={styles.warningText}>{strings.addExerciseMuscleGroupRequired}</Text> : null}
 
           <Text style={styles.fieldLabel}>{strings.addExerciseEquipmentLabel}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -168,8 +197,8 @@ export function AddExercisePanel({ db, userId, existingExercises, onPick, onClos
           ) : null}
 
           <Pressable
-            style={[styles.createButton, loadConvention == null && styles.createButtonDisabled]}
-            disabled={loadConvention == null}
+            style={[styles.createButton, (!canCreate || loadConvention == null) && styles.createButtonDisabled]}
+            disabled={!canCreate || loadConvention == null}
             onPress={handleCreate}>
             <Text style={styles.createButtonLabel}>{strings.addExerciseCreateButton}</Text>
           </Pressable>
@@ -250,6 +279,8 @@ const styles = StyleSheet.create({
     borderColor: theme.color.textMuted,
     paddingHorizontal: 10,
     paddingVertical: 6,
+    minHeight: 32,
+    justifyContent: 'center',
   },
   chipActive: {
     backgroundColor: theme.color.accentPrimary,

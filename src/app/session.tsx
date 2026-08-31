@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AddExercisePanel } from '@/components/logging/AddExercisePanel';
 import { ExerciseBlock } from '@/components/logging/ExerciseBlock';
+import { ExercisePicker } from '@/components/logging/ExercisePicker';
 import { RestClock } from '@/components/logging/RestClock';
 import { RestFlashOverlay } from '@/components/logging/RestFlashOverlay';
 import { useRestClock, type RestSettings } from '@/components/logging/useRestClock';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { newId } from '@/data/id';
-import { getExerciseById, listExercises } from '@/data/repositories/exerciseRepository';
+import { getExerciseById, listExercises, recordExerciseUsage } from '@/data/repositories/exerciseRepository';
 import {
   createSessionExercise,
   listSessionExercisesBySession,
@@ -210,18 +210,24 @@ export default function SessionScreen() {
   async function handleExercisePicked(exercise: Exercise) {
     if (!session) return;
     const nextOrder = items.length > 0 ? Math.max(...items.map((it) => it.sessionExercise.orderIndex)) + 1 : 0;
-    const created = await createSessionExercise(db, {
-      userId,
-      sessionId: session.id,
-      exerciseId: exercise.id,
-      orderIndex: nextOrder,
-      supersetGroupId: null,
-      note: null,
-      skippedAt: null,
-    });
+    const [created, used] = await Promise.all([
+      createSessionExercise(db, {
+        userId,
+        sessionId: session.id,
+        exerciseId: exercise.id,
+        orderIndex: nextOrder,
+        supersetGroupId: null,
+        note: null,
+        skippedAt: null,
+      }),
+      recordExerciseUsage(db, userId, exercise.id),
+    ]);
+    const pickedExercise = used ?? exercise;
     if (created) {
-      setItems((prev) => [...prev, { sessionExercise: created, exercise }]);
-      setAllExercises((prev) => (prev.some((e) => e.id === exercise.id) ? prev : [...prev, exercise]));
+      setItems((prev) => [...prev, { sessionExercise: created, exercise: pickedExercise }]);
+      setAllExercises((prev) =>
+        prev.some((e) => e.id === pickedExercise.id) ? prev.map((e) => (e.id === pickedExercise.id ? pickedExercise : e)) : [...prev, pickedExercise],
+      );
     }
     setAddPanelOpen(false);
   }
@@ -292,7 +298,7 @@ export default function SessionScreen() {
         </View>
 
         {addPanelOpen ? (
-          <AddExercisePanel
+          <ExercisePicker
             db={db}
             userId={userId}
             existingExercises={allExercises}
