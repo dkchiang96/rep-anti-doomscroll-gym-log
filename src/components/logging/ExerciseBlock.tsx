@@ -12,7 +12,7 @@ import {
   listSetsBySessionExercise,
   updateSet,
 } from '@/data/repositories/setRepository';
-import type { exercise, sessionExercise, setEntry } from '@/data/schema';
+import type { exercise, plateInventory, sessionExercise, setEntry } from '@/data/schema';
 import type { AppDatabase } from '@/data/types';
 import { buildGhostSets, type GhostSet, type SetType } from '@/domain/ghostPrefill';
 import { deriveLoadDisplay } from '@/domain/loadConvention';
@@ -23,11 +23,13 @@ import { strings } from '@/strings';
 import { theme } from '@/theme';
 
 import { NumericKeypad } from './NumericKeypad';
+import { PlateCalculator } from './PlateCalculator';
 import { SetRow } from './SetRow';
 
 type Exercise = typeof exercise.$inferSelect;
 type SessionExercise = typeof sessionExercise.$inferSelect;
 type CommittedSet = typeof setEntry.$inferSelect;
+type PlateInventoryRow = typeof plateInventory.$inferSelect;
 
 const DEFAULT_WEIGHT_STEP_KG = 2.5;
 
@@ -65,6 +67,9 @@ interface ExerciseBlockProps {
   onExerciseUpdated: (updated: Exercise) => void;
   /** FR-5.6: lets the session plan strip know how far along this exercise is. */
   onProgressChanged?: (committedCount: number, ghostCount: number) => void;
+  /** FR-3.13: the user's plate inventory, shared across every exercise in the session. */
+  plateInventory: PlateInventoryRow[];
+  onPlateInventoryChanged: (rows: PlateInventoryRow[]) => void;
 }
 
 export function ExerciseBlock({
@@ -84,6 +89,8 @@ export function ExerciseBlock({
   onSetCommitted,
   onExerciseUpdated,
   onProgressChanged,
+  plateInventory,
+  onPlateInventoryChanged,
 }: ExerciseBlockProps) {
   const [committedSets, setCommittedSets] = useState<CommittedSet[]>([]);
   const [ghostSets, setGhostSets] = useState<GhostSet[]>([]);
@@ -91,7 +98,15 @@ export function ExerciseBlock({
   const [noteText, setNoteText] = useState(se.note ?? '');
   const [keypadTarget, setKeypadTarget] = useState<{ rowIndex: number; field: 'weight' | 'reps' } | null>(null);
   const [restKeypadOpen, setRestKeypadOpen] = useState(false);
+  const [calculatorRowIndex, setCalculatorRowIndex] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
+
+  // FR-3.13: applies only to barbell/plate_loaded exercises with a plate-based
+  // convention — a plate_loaded machine created with the bodyweight convention
+  // (an edge case the picker technically allows) has nothing for the calculator to compute.
+  const plateConvention = ex.loadConvention === 'bodyweight' ? null : ex.loadConvention;
+  const usesPlateCalculator =
+    plateConvention != null && (ex.equipmentType === 'barbell' || ex.equipmentType === 'plate_loaded');
 
   useEffect(() => {
     let cancelled = false;
@@ -356,6 +371,7 @@ export function ExerciseBlock({
                 onToggleWarmup={() => handleToggleWarmup(row)}
                 onConfirm={() => handleConfirmGhost(row.rowIndex)}
                 onOpenKeypad={(field) => setKeypadTarget({ rowIndex: row.rowIndex, field })}
+                onOpenCalculator={usesPlateCalculator ? () => setCalculatorRowIndex(row.rowIndex) : undefined}
                 onAddDropSet={
                   !row.isGhost && row.setType === 'working' ? () => handleAddDropSet(row.rowIndex) : undefined
                 }
@@ -384,6 +400,27 @@ export function ExerciseBlock({
         onConfirm={handleTargetRestConfirm}
         onCancel={() => setRestKeypadOpen(false)}
       />
+
+      {usesPlateCalculator && plateConvention && calculatorRowIndex != null ? (
+        <PlateCalculator
+          visible
+          db={db}
+          userId={userId}
+          exerciseId={ex.id}
+          exerciseName={ex.name}
+          convention={plateConvention}
+          barWeightKg={ex.barWeightKg}
+          targetKg={rowsByIndex.get(calculatorRowIndex)?.weightKg ?? 0}
+          inventory={plateInventory}
+          onClose={() => setCalculatorRowIndex(null)}
+          onApplyWeight={(weightKg) => {
+            const row = rowsByIndex.get(calculatorRowIndex);
+            if (row) handleWeightChange(row, weightKg);
+          }}
+          onBarWeightSet={(barWeightKg) => onExerciseUpdated({ ...ex, barWeightKg })}
+          onInventoryChanged={onPlateInventoryChanged}
+        />
+      ) : null}
     </View>
   );
 }

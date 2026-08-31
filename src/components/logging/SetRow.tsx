@@ -25,6 +25,8 @@ interface SetRowProps {
   onConfirm: () => void;
   onOpenKeypad: (field: 'weight' | 'reps') => void;
   onAddDropSet?: () => void;
+  /** FR-3.13.1: for barbell/plate_loaded exercises, the weight numeral opens the plate calculator instead of the plain keypad. */
+  onOpenCalculator?: () => void;
 }
 
 function formatWeight(kg: number): string {
@@ -49,6 +51,7 @@ export function SetRow({
   onConfirm,
   onOpenKeypad,
   onAddDropSet,
+  onOpenCalculator,
 }: SetRowProps) {
   const isWarmup = setType === 'warmup';
 
@@ -70,7 +73,7 @@ export function SetRow({
             value={formatWeight(weightKg)}
             disabled={disabled}
             onStep={(dir) => onWeightChange(Math.max(0, weightKg + dir * weightStep))}
-            onTapValue={() => onOpenKeypad('weight')}
+            onTapValue={onOpenCalculator ?? (() => onOpenKeypad('weight'))}
           />
           <Text style={[styles.conventionLabel, isGhost && styles.mutedText]}>{conventionLabel}</Text>
           {totalLine ? <Text style={[styles.totalLine, isGhost && styles.mutedText]}>{totalLine}</Text> : null}

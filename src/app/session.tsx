@@ -12,6 +12,7 @@ import { useRestClock, type RestSettings } from '@/components/logging/useRestClo
 import { useDatabase } from '@/data/DatabaseProvider';
 import { newId } from '@/data/id';
 import { getExerciseById, listExercises, recordExerciseUsage } from '@/data/repositories/exerciseRepository';
+import { seedDefaultPlateInventoryIfEmpty } from '@/data/repositories/plateInventoryRepository';
 import {
   createSessionExercise,
   listSessionExercisesBySession,
@@ -22,7 +23,12 @@ import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExe
 import { getTemplateById } from '@/data/repositories/templateRepository';
 import { createTemplateFromSession } from '@/data/repositories/templateFromSessionRepository';
 import { getUser, updateRestSettings } from '@/data/repositories/userRepository';
-import type { exercise as exerciseTable, session as sessionTable, sessionExercise as sessionExerciseTable } from '@/data/schema';
+import type {
+  exercise as exerciseTable,
+  plateInventory as plateInventoryTable,
+  session as sessionTable,
+  sessionExercise as sessionExerciseTable,
+} from '@/data/schema';
 import { formatElapsed } from '@/domain/duration';
 import { resolveTargetRestSeconds } from '@/domain/restClock';
 import { strings } from '@/strings';
@@ -31,6 +37,7 @@ import { theme } from '@/theme';
 type Session = typeof sessionTable.$inferSelect;
 type SessionExercise = typeof sessionExerciseTable.$inferSelect;
 type Exercise = typeof exerciseTable.$inferSelect;
+type PlateInventoryRow = typeof plateInventoryTable.$inferSelect;
 
 interface Progress {
   committed: number;
@@ -75,6 +82,7 @@ export default function SessionScreen() {
 
   const [items, setItems] = useState<Item[]>([]);
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
+  const [plateInventory, setPlateInventory] = useState<PlateInventoryRow[]>([]);
   const [sessionNote, setSessionNote] = useState('');
   const [addPanelOpen, setAddPanelOpen] = useState(false);
 
@@ -118,13 +126,15 @@ export default function SessionScreen() {
         );
       }
 
-      const [sessionExercises, exercises, user] = await Promise.all([
+      const [sessionExercises, exercises, user, plates] = await Promise.all([
         listSessionExercisesBySession(db, userId, active.id),
         listExercises(db, userId),
         getUser(db, userId),
+        seedDefaultPlateInventoryIfEmpty(db, userId),
       ]);
       if (cancelled) return;
       setAllExercises(exercises);
+      setPlateInventory(plates);
       if (user) {
         setRestSettings({
           flashIntervalSeconds: user.restFlashIntervalSeconds,
@@ -373,6 +383,8 @@ export default function SessionScreen() {
                 onSetCommitted={() => handleSetCommitted(it)}
                 onExerciseUpdated={handleExerciseUpdated}
                 onProgressChanged={(committed, ghost) => handleProgressChanged(it.sessionExercise.id, committed, ghost)}
+                plateInventory={plateInventory}
+                onPlateInventoryChanged={setPlateInventory}
               />
             </View>
           ))}

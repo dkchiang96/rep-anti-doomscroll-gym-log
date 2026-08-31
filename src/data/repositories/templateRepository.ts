@@ -66,6 +66,15 @@ export async function archiveTemplate(db: AppDatabase, userId: string, id: strin
     .where(and(eq(template.id, id), eq(template.userId, userId)));
 }
 
+// FR-5.8: archiving is fully reversible via the same multi-select mechanism.
+export async function unarchiveTemplate(db: AppDatabase, userId: string, id: string) {
+  const now = new Date();
+  await db
+    .update(template)
+    .set({ isArchived: false, archivedAt: null, updatedAt: now })
+    .where(and(eq(template.id, id), eq(template.userId, userId)));
+}
+
 export async function softDeleteTemplate(db: AppDatabase, userId: string, id: string) {
   const now = new Date();
   await db

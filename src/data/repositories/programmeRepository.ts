@@ -71,6 +71,15 @@ export async function archiveProgramme(db: AppDatabase, userId: string, id: stri
     .where(and(eq(programme.id, id), eq(programme.userId, userId)));
 }
 
+// FR-5.8: archiving is fully reversible via the same multi-select mechanism.
+export async function unarchiveProgramme(db: AppDatabase, userId: string, id: string) {
+  const now = new Date();
+  await db
+    .update(programme)
+    .set({ isArchived: false, archivedAt: null, updatedAt: now })
+    .where(and(eq(programme.id, id), eq(programme.userId, userId)));
+}
+
 export async function softDeleteProgramme(db: AppDatabase, userId: string, id: string) {
   const now = new Date();
   await db

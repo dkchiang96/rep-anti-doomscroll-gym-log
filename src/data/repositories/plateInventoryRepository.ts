@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 
+import { DEFAULT_PLATE_DENOMINATIONS } from '../../domain/plates';
 import { newId } from '../id';
 import { plateInventory } from '../schema';
 import type { AppDatabase } from '../types';
@@ -55,4 +56,23 @@ export async function softDeletePlateInventory(db: AppDatabase, userId: string, 
     .update(plateInventory)
     .set({ deletedAt: now, updatedAt: now })
     .where(and(eq(plateInventory.id, id), eq(plateInventory.userId, userId)));
+}
+
+// FR-3.13.3/.5: seeds the standard denominations/colours the first time the
+// calculator is opened. Quantity per side starts at 0 (see plates.ts) —
+// nothing is usable until the user records what their gym actually has.
+export async function seedDefaultPlateInventoryIfEmpty(db: AppDatabase, userId: string) {
+  const existing = await listPlateInventory(db, userId);
+  if (existing.length > 0) return existing;
+  for (const denom of DEFAULT_PLATE_DENOMINATIONS) {
+    await createPlateInventory(db, {
+      userId,
+      gymLabel: 'default',
+      denominationKg: denom.denominationKg,
+      colourHex: denom.colourHex,
+      quantityPerSide: 0,
+      isActive: true,
+    });
+  }
+  return listPlateInventory(db, userId);
 }
