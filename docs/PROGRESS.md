@@ -32,3 +32,13 @@ User tested on a real device via Expo Go and hit an HTTP 500 from the dev server
 **Fix:** `config.resolver.unstable_enablePackageExports = false;` in `metro.config.js`, falling back to Metro's older resolution behavior. Verified against the exact bundle URL Expo Go requests (`.../entry.bundle?...&transform.bytecode=1&...`), which now returns 200 instead of 500. `npm run typecheck` and `npm run test` still pass.
 
 **Commit:** `fix(build): disable metro package-exports resolution for drizzle-orm compat`
+
+## 2026-08-31 — Session 1 follow-up 2: fix crypto.getRandomValues crash
+
+With the bundling error fixed, the app got past the splash screen but then crashed on launch: `crypto.getRandomValues() not supported`, thrown from `src/data/id.ts`.
+
+**Root cause:** `uuid`'s RNG depends on the Web Crypto `crypto.getRandomValues()` API. Node provides this natively (Node 19+), which is why Jest never caught it, but Hermes (React Native's JS engine) does not provide it out of the box.
+
+**Fix:** added `react-native-get-random-values` and imported it for its side effect at the top of `src/data/id.ts`, before `uuid`. It patches `global.crypto.getRandomValues` using a native module — but only if `global.crypto.getRandomValues` isn't already a function, so it's a no-op under Jest (Node already has one) and doesn't touch `TurboModuleRegistry` there. `npm run typecheck`, `npm run test`, and `npx expo export --platform android` all still pass.
+
+**Commit:** `fix(data): polyfill crypto.getRandomValues for uuid on Hermes`
