@@ -6,6 +6,12 @@ import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
   displayName: text('display_name').notNull(),
+  // Rest clock config (FR-4.4): singleton settings, so they live directly on
+  // the one user row rather than a separate settings table.
+  restFlashIntervalSeconds: integer('rest_flash_interval_seconds').notNull().default(30),
+  restSoundEnabled: integer('rest_sound_enabled', { mode: 'boolean' }).notNull().default(false),
+  restVibrationEnabled: integer('rest_vibration_enabled', { mode: 'boolean' }).notNull().default(false),
+  restCameraFlashEnabled: integer('rest_camera_flash_enabled', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });
@@ -27,6 +33,8 @@ export const exercise = sqliteTable('exercise', {
   // Required at the repository layer, not the DB layer, when equipmentType === 'barbell'.
   barWeightKg: real('bar_weight_kg'),
   defaultWeightStep: real('default_weight_step'),
+  // FR-4.2: soft marker only, never an alarm. Null falls back to 60s in the domain layer.
+  targetRestSeconds: integer('target_rest_seconds'),
   source: text('source', { enum: ['user', 'system', 'imported'] }).notNull(),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
   useCount: integer('use_count').notNull().default(0),

@@ -143,3 +143,28 @@ Built out the full set-logging screen: ghost pre-fill from the last time an exer
 **Exit check:** typecheck and full test suite pass; Android bundle exports cleanly with all new screens/components. The literal "log a full push session in under 90 seconds" timing check needs a real device — worth doing before Session 5.
 
 **Commit:** `feat(logging): core set loop`
+
+## 2026-08-31 — Session 5: rest clock
+
+Built the auto-starting rest clock (FR-4.1–4.7): count-up timer, 30s-default full-screen flash, optional sound/vibration/camera-flash cues (all default off), wake lock, superset suppression, and a per-exercise soft target-rest marker.
+
+**What shipped:**
+- Schema: `exercise.target_rest_seconds` (nullable, falls back to 60s in the domain layer — same nullable-with-computed-default pattern as `default_weight_step`), and four rest-config columns directly on the singleton `user` row (`rest_flash_interval_seconds` default 30, `rest_sound_enabled`/`rest_vibration_enabled`/`rest_camera_flash_enabled` default false) since there's no per-row settings table and `user` is where other singleton state already lives; migration `0003_ambitious_bloodaxe`.
+- `src/domain/restClock.ts` — pure `resolveTargetRestSeconds` and `countFlashCrossings` (diffs `Math.floor(elapsed / interval)` between two readings rather than testing an exact modulus, so a flash still fires correctly if a tick lags, e.g. after the app is backgrounded). Tested in isolation.
+- `src/components/logging/useRestClock.ts` — the tick loop (250ms) and all cue side effects: `expo-haptics` impact, `expo-audio` replaying a generated 150ms beep (`assets/sounds/rest-beep.wav`, a plain sine tone written directly as WAV bytes — no external asset needed), and `expo-camera` torch pulses via a hidden `CameraView` (permission requested lazily, only when the camera-flash toggle is turned on; silently falls back to screen-flash-only if denied).
+- `src/components/logging/RestClock.tsx` — display only (elapsed, target-as-soft-marker, inline settings panel with an interval `Stepper` and three toggles). `src/components/logging/RestFlashOverlay.tsx` — the full-screen flash + hidden camera, rendered as a sibling of the session screen's `ScrollView` rather than nested inside it, since an absolutely-positioned overlay nested in a `ScrollView` scrolls and clips with the content instead of covering the physical screen.
+- `src/app/session.tsx` — `useKeepAwake()` for the whole screen (FR-4.5); rest state (`restStartedAt`/`restTargetSeconds`) starts on `ExerciseBlock`'s new `onSetCommitted` callback, **unless** that exercise is superset-linked (FR-3.9's suppression — interpreted as: no auto-start on any commit within a superset-linked exercise, since Session 4 supersets are a simple pairing toggle with no round-tracking to hang a more precise rule on); loads/persists the four rest settings via `userRepository.updateRestSettings`.
+- `src/components/logging/ExerciseBlock.tsx` — added `onSetCommitted` (fires after every successful set write, ghost-confirm and manual add/drop-set alike, since all three funnel through the same `commitNewSet`) and a minimal tap-to-edit target-rest field in the exercise header, reusing the existing `NumericKeypad`.
+- `src/data/repositories/userRepository.ts` — `updateRestSettings`.
+- New deps via `npx expo install`: `expo-keep-awake`, `expo-haptics`, `expo-audio`, `expo-camera` (+ its config plugin with a camera-usage string in `app.json`).
+
+**Deviations from the brief:**
+- **No dedicated settings screen.** The four rest-cue settings live in an inline expandable panel next to the clock on the session screen itself — nothing in the build plan scopes a settings route before Session 10 at the earliest, and FR-4.6 already rules out a tab/drawer for the clock itself.
+- **Per-exercise target rest is a bare tap-to-edit numeral**, not new dedicated UI — the brief only asked that it be "settable," and a full exercise-settings surface is Session 6's exercise-picker territory.
+- **Superset rest suppression is exercise-level, not round-level** (see above) — the brief's own wording ("suppressed between superset pairs") matches this without requiring round-boundary tracking that nothing in the schema currently models.
+- Camera-flash cue requests camera permission only on first enable, and degrades silently (screen flash still fires) if the user denies it, rather than blocking the toggle.
+- **`npm run lint` is currently broken** (`Cannot find module 'eslint'`) — unrelated to this session's changes: `eslint` was never a declared devDependency (Session 4's note flagged `expo lint` auto-bootstrapping it into `node_modules` on first run); this session's `npx expo install` did a clean `npm install` that pruned it since it wasn't in the lockfile. Not fixed — out of scope, and `npm run typecheck`/`npm run test` (the brief's actual exit gate) are unaffected.
+
+**Exit check:** `npm run typecheck` and `npm run test` pass (68 tests, up from 60). `npx expo export --platform android` and `--platform web` both still bundle cleanly with the new native modules and the beep asset picked up. The literal "complete a session without leaving the logging screen and without the display sleeping" and "flash visible from 1.5m in peripheral vision" checks need a real device — worth doing before Session 6.
+
+**Commit:** `feat(timer): rest clock and flash cue`

@@ -1,10 +1,14 @@
 import { Redirect, useRouter } from 'expo-router';
+import { useKeepAwake } from 'expo-keep-awake';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddExercisePanel } from '@/components/logging/AddExercisePanel';
 import { ExerciseBlock } from '@/components/logging/ExerciseBlock';
+import { RestClock } from '@/components/logging/RestClock';
+import { RestFlashOverlay } from '@/components/logging/RestFlashOverlay';
+import { useRestClock, type RestSettings } from '@/components/logging/useRestClock';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { newId } from '@/data/id';
 import { getExerciseById, listExercises } from '@/data/repositories/exerciseRepository';
@@ -15,8 +19,10 @@ import {
 } from '@/data/repositories/sessionExerciseRepository';
 import { endSession, getActiveSession, updateSession } from '@/data/repositories/sessionRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
+import { getUser, updateRestSettings } from '@/data/repositories/userRepository';
 import type { exercise as exerciseTable, session as sessionTable, sessionExercise as sessionExerciseTable } from '@/data/schema';
 import { formatElapsed } from '@/domain/duration';
+import { resolveTargetRestSeconds } from '@/domain/restClock';
 import { strings } from '@/strings';
 import { theme } from '@/theme';
 
@@ -37,7 +43,16 @@ function skippedSorted(items: Item[]) {
   return items.filter((it) => it.sessionExercise.skippedAt).sort((a, b) => a.sessionExercise.orderIndex - b.sessionExercise.orderIndex);
 }
 
+const DEFAULT_REST_SETTINGS: RestSettings = {
+  flashIntervalSeconds: 30,
+  soundEnabled: false,
+  vibrationEnabled: false,
+  cameraFlashEnabled: false,
+};
+
 export default function SessionScreen() {
+  useKeepAwake(); // FR-4.5: screen stays awake for the whole session.
+
   const { db, userId } = useDatabase();
   const router = useRouter();
 
@@ -50,6 +65,10 @@ export default function SessionScreen() {
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
   const [sessionNote, setSessionNote] = useState('');
   const [addPanelOpen, setAddPanelOpen] = useState(false);
+
+  const [restSettings, setRestSettings] = useState<RestSettings>(DEFAULT_REST_SETTINGS);
+  const [restStartedAt, setRestStartedAt] = useState<number | null>(null);
+  const [restTargetSeconds, setRestTargetSeconds] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,12 +84,21 @@ export default function SessionScreen() {
         if (!cancelled && t) setHeading(t.name);
       }
 
-      const [sessionExercises, exercises] = await Promise.all([
+      const [sessionExercises, exercises, user] = await Promise.all([
         listSessionExercisesBySession(db, userId, active.id),
         listExercises(db, userId),
+        getUser(db, userId),
       ]);
       if (cancelled) return;
       setAllExercises(exercises);
+      if (user) {
+        setRestSettings({
+          flashIntervalSeconds: user.restFlashIntervalSeconds,
+          soundEnabled: user.restSoundEnabled,
+          vibrationEnabled: user.restVibrationEnabled,
+          cameraFlashEnabled: user.restCameraFlashEnabled,
+        });
+      }
 
       const exerciseById = new Map(exercises.map((e) => [e.id, e]));
       const loadedItems: Item[] = [];
@@ -90,6 +118,28 @@ export default function SessionScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  const restClock = useRestClock(restStartedAt, restTargetSeconds, restSettings);
+
+  function handleSetCommitted(it: Item) {
+    // FR-3.9 / Session 5 brief: rest is suppressed between superset pairs.
+    if (it.sessionExercise.supersetGroupId != null) return;
+    setRestStartedAt(Date.now());
+    setRestTargetSeconds(resolveTargetRestSeconds(it.exercise.targetRestSeconds));
+  }
+
+  function handleRestSettingsChange(patch: Partial<RestSettings>) {
+    setRestSettings((prev) => {
+      const next = { ...prev, ...patch };
+      void updateRestSettings(db, userId, {
+        restFlashIntervalSeconds: next.flashIntervalSeconds,
+        restSoundEnabled: next.soundEnabled,
+        restVibrationEnabled: next.vibrationEnabled,
+        restCameraFlashEnabled: next.cameraFlashEnabled,
+      });
+      return next;
+    });
+  }
+
   async function handleEnd() {
     if (!session || ending) return;
     setEnding(true);
@@ -105,6 +155,10 @@ export default function SessionScreen() {
 
   function patchItem(updated: SessionExercise) {
     setItems((prev) => prev.map((it) => (it.sessionExercise.id === updated.id ? { ...it, sessionExercise: updated } : it)));
+  }
+
+  function handleExerciseUpdated(updated: Exercise) {
+    setItems((prev) => prev.map((it) => (it.exercise.id === updated.id ? { ...it, exercise: updated } : it)));
   }
 
   async function handleSkipToggle(se: SessionExercise) {
@@ -185,6 +239,11 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <RestFlashOverlay
+        flashing={restClock.flashing}
+        cameraReady={restClock.cameraReady}
+        torchOn={restClock.torchOn}
+      />
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.heading}>{heading}</Text>
 
@@ -192,6 +251,14 @@ export default function SessionScreen() {
           <Text style={styles.elapsedLabel}>{strings.sessionElapsedLabel}</Text>
           <Text style={styles.elapsedValue}>{formatElapsed(now - session.startedAt.getTime())}</Text>
         </View>
+
+        <RestClock
+          elapsedMs={restClock.elapsedMs}
+          targetSeconds={restClock.targetSeconds}
+          running={restStartedAt != null}
+          settings={restSettings}
+          onSettingsChange={handleRestSettingsChange}
+        />
 
         <TextInput
           style={styles.sessionNoteInput}
@@ -218,6 +285,8 @@ export default function SessionScreen() {
               onSupersetToggle={() => handleSupersetToggle(it.sessionExercise)}
               onReorderUp={() => handleReorder(it.sessionExercise, 'up')}
               onReorderDown={() => handleReorder(it.sessionExercise, 'down')}
+              onSetCommitted={() => handleSetCommitted(it)}
+              onExerciseUpdated={handleExerciseUpdated}
             />
           ))}
         </View>

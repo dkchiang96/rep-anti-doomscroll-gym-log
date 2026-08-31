@@ -25,3 +25,18 @@ export async function updateDisplayName(db: AppDatabase, userId: string, display
     .where(eq(user.id, userId));
   return getUser(db, userId);
 }
+
+export type RestSettingsPatch = Partial<
+  Pick<
+    typeof user.$inferInsert,
+    'restFlashIntervalSeconds' | 'restSoundEnabled' | 'restVibrationEnabled' | 'restCameraFlashEnabled'
+  >
+>;
+
+export async function updateRestSettings(db: AppDatabase, userId: string, patch: RestSettingsPatch) {
+  await db
+    .update(user)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(user.id, userId));
+  return getUser(db, userId);
+}

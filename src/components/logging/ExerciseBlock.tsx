@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { updateExercise } from '@/data/repositories/exerciseRepository';
 import {
   getMostRecentSessionExerciseForExercise,
   updateSessionExercise,
@@ -15,6 +16,7 @@ import type { exercise, sessionExercise, setEntry } from '@/data/schema';
 import type { AppDatabase } from '@/data/types';
 import { buildGhostSets, type GhostSet, type SetType } from '@/domain/ghostPrefill';
 import { deriveLoadDisplay } from '@/domain/loadConvention';
+import { resolveTargetRestSeconds } from '@/domain/restClock';
 import { orderRowsForDisplay } from '@/domain/setRowOrdering';
 import { inferWeightStep } from '@/domain/weightStep';
 import { strings } from '@/strings';
@@ -51,6 +53,8 @@ interface ExerciseBlockProps {
   onSupersetToggle: () => void;
   onReorderUp: () => void;
   onReorderDown: () => void;
+  onSetCommitted: () => void;
+  onExerciseUpdated: (updated: Exercise) => void;
 }
 
 export function ExerciseBlock({
@@ -66,12 +70,15 @@ export function ExerciseBlock({
   onSupersetToggle,
   onReorderUp,
   onReorderDown,
+  onSetCommitted,
+  onExerciseUpdated,
 }: ExerciseBlockProps) {
   const [committedSets, setCommittedSets] = useState<CommittedSet[]>([]);
   const [ghostSets, setGhostSets] = useState<GhostSet[]>([]);
   const [weightStep, setWeightStep] = useState(ex.defaultWeightStep ?? DEFAULT_WEIGHT_STEP_KG);
   const [noteText, setNoteText] = useState(se.note ?? '');
   const [keypadTarget, setKeypadTarget] = useState<{ rowIndex: number; field: 'weight' | 'reps' } | null>(null);
+  const [restKeypadOpen, setRestKeypadOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -162,7 +169,10 @@ export function ExerciseBlock({
       restAfterSeconds: null,
       completedAt: new Date(),
     });
-    if (created) setCommittedSets((prev) => [...prev, created]);
+    if (created) {
+      setCommittedSets((prev) => [...prev, created]);
+      onSetCommitted();
+    }
   }
 
   function handleConfirmGhost(rowIndex: number) {
@@ -241,6 +251,14 @@ export function ExerciseBlock({
     void updateSessionExercise(db, userId, se.id, { note: noteText.length > 0 ? noteText : null });
   }
 
+  function handleTargetRestConfirm(value: number) {
+    setRestKeypadOpen(false);
+    const seconds = Math.max(0, Math.round(value));
+    void updateExercise(db, userId, ex.id, { targetRestSeconds: seconds }).then((updated) => {
+      if (updated) onExerciseUpdated(updated);
+    });
+  }
+
   let topLevelCounter = 0;
 
   return (
@@ -249,6 +267,11 @@ export function ExerciseBlock({
         <View style={styles.headerTitleBlock}>
           <Text style={styles.name}>{ex.name}</Text>
           {isSupersetLinked ? <Text style={styles.supersetBadge}>{strings.exerciseSupersetBadge}</Text> : null}
+          <Pressable onPress={() => setRestKeypadOpen(true)}>
+            <Text style={styles.targetRestLabel}>
+              {strings.targetRestLabel(resolveTargetRestSeconds(ex.targetRestSeconds))}
+            </Text>
+          </Pressable>
         </View>
         <View style={styles.headerControls}>
           <Pressable style={styles.headerButton} disabled={!canReorderUp} onPress={onReorderUp}>
@@ -325,6 +348,14 @@ export function ExerciseBlock({
         onConfirm={handleKeypadConfirm}
         onCancel={() => setKeypadTarget(null)}
       />
+
+      <NumericKeypad
+        visible={restKeypadOpen}
+        label={strings.targetRestEditLabel}
+        allowDecimal={false}
+        onConfirm={handleTargetRestConfirm}
+        onCancel={() => setRestKeypadOpen(false)}
+      />
     </View>
   );
 }
@@ -356,6 +387,11 @@ const styles = StyleSheet.create({
     color: theme.color.accentPrimary,
     fontSize: 11,
     fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  targetRestLabel: {
+    color: theme.color.textMuted,
+    fontSize: 11,
     textTransform: 'uppercase',
   },
   headerControls: {

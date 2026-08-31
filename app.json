@@ -33,7 +33,14 @@
           "imageWidth": 76
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-audio",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Used only to pulse the flash as an optional rest-timer cue."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
