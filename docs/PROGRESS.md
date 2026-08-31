@@ -22,3 +22,13 @@ Shipped the schema, migrations, and repository layer per the brief. No UI or nav
 **Exit check:** `npm run typecheck` and `npm run test` pass.
 
 **Commit:** `feat(data): schema, migrations, repositories`
+
+## 2026-08-31 — Session 1 follow-up: fix Expo Go 500 on launch
+
+User tested on a real device via Expo Go and hit an HTTP 500 from the dev server. `expo export` (static bundling, used to smoke-test Session 1) had not caught this because it doesn't request the Hermes-bytecode dev bundle Expo Go actually uses.
+
+**Root cause:** Metro's `unstable_enablePackageExports` resolver mishandles `drizzle-orm`: `drizzle-orm/expo-sqlite/driver.js` imports a sibling file (`../logger.js`) that sits outside `expo-sqlite`'s own `exports` subpath boundary in `drizzle-orm/package.json`. Metro's exports-aware resolver refused to follow that relative import once package-exports resolution was enabled (Metro's default), even though the file exists on disk and plain relative resolution would find it.
+
+**Fix:** `config.resolver.unstable_enablePackageExports = false;` in `metro.config.js`, falling back to Metro's older resolution behavior. Verified against the exact bundle URL Expo Go requests (`.../entry.bundle?...&transform.bytecode=1&...`), which now returns 200 instead of 500. `npm run typecheck` and `npm run test` still pass.
+
+**Commit:** `fix(build): disable metro package-exports resolution for drizzle-orm compat`
