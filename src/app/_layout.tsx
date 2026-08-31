@@ -54,6 +54,15 @@ export default function RootLayout() {
               headerTintColor: theme.color.textPrimary,
             }}
           />
+          <Stack.Screen
+            name="progress"
+            options={{
+              headerShown: true,
+              title: strings.progressTitle,
+              headerStyle: { backgroundColor: theme.color.bg },
+              headerTintColor: theme.color.textPrimary,
+            }}
+          />
         </Stack>
       </DatabaseProvider>
     </ThemeProvider>

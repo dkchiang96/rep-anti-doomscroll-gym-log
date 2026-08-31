@@ -107,6 +107,10 @@ export default function HomeScreen() {
           <Text style={styles.importLinkLabel}>{strings.homeArchiveLink}</Text>
         </Pressable>
 
+        <Pressable style={styles.importLink} onPress={() => router.push('/progress')}>
+          <Text style={styles.importLinkLabel}>{strings.homeProgressLink}</Text>
+        </Pressable>
+
         <Pressable style={styles.importLink} onPress={() => router.push('/import')}>
           <Text style={styles.importLinkLabel}>{strings.homeImportLink}</Text>
         </Pressable>

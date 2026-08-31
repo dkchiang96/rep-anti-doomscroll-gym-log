@@ -177,6 +177,7 @@ export const strings = {
   plateCalcClose: 'Close',
 
   homeArchiveLink: 'Archive',
+  homeProgressLink: 'Progress',
   archiveTitle: 'Archive',
   archiveActiveTab: 'Active',
   archiveArchivedTab: 'Archived',
@@ -188,4 +189,12 @@ export const strings = {
   archiveBulkArchiveButton: (n: number) => `Archive (${n})`,
   archiveBulkRestoreButton: (n: number) => `Restore (${n})`,
   archiveBackButton: 'Back',
+
+  progressTitle: 'Progress',
+  progressPickPrompt: 'Pick an exercise to see its history.',
+  progressChangeExerciseButton: 'Change exercise',
+  progressNoHistory: 'No logged sets yet for this exercise.',
+  progressWeightLegend: 'Top weight (kg)',
+  progressRepsLegend: 'Reps',
+  progressTableHeading: 'Sessions',
 } as const;
