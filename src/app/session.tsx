@@ -18,6 +18,7 @@ import {
   listSessionExercisesBySession,
   updateSessionExercise,
 } from '@/data/repositories/sessionExerciseRepository';
+import { runBackupRetention } from '@/data/backup';
 import { endSession, getActiveSession, updateSession } from '@/data/repositories/sessionRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
@@ -188,6 +189,13 @@ export default function SessionScreen() {
     if (!session || ending) return;
     setEnding(true);
     await endSession(db, userId, session.id);
+    // Best-effort: a backup failure (disk full, permissions) should never
+    // block ending the session, which is the actual user-facing action.
+    try {
+      await runBackupRetention();
+    } catch (err) {
+      console.warn('Session backup failed', err);
+    }
     router.replace('/');
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useInstrumentationStore } from '@/state/instrumentationStore';
 import { theme } from '@/theme';
 
 const HOLD_DELAY_MS = 350;
@@ -16,11 +17,21 @@ interface StepperProps {
   disabled?: boolean;
 }
 
-function useHoldRepeat(onStep: (direction: 1 | -1) => void) {
+function useHoldRepeat(onStepProp: (direction: 1 | -1) => void) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const accelerateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repeatingRef = useRef(false);
+
+  // Every step — single tap or a hold-repeat tick — counts toward
+  // taps-per-set instrumentation (debug screen, session-10 brief).
+  const onStep = useCallback(
+    (direction: 1 | -1) => {
+      useInstrumentationStore.getState().recordTap();
+      onStepProp(direction);
+    },
+    [onStepProp],
+  );
 
   const clearAll = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);

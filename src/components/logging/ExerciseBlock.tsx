@@ -19,6 +19,7 @@ import { deriveLoadDisplay } from '@/domain/loadConvention';
 import { resolveTargetRestSeconds } from '@/domain/restClock';
 import { orderRowsForDisplay } from '@/domain/setRowOrdering';
 import { inferWeightStep } from '@/domain/weightStep';
+import { useInstrumentationStore } from '@/state/instrumentationStore';
 import { strings } from '@/strings';
 import { theme } from '@/theme';
 
@@ -204,6 +205,7 @@ export function ExerciseBlock({
     });
     if (created) {
       setCommittedSets((prev) => [...prev, created]);
+      useInstrumentationStore.getState().recordSetCompletion(ex.name, committedSets.length + 1);
       onSetCommitted();
     }
   }

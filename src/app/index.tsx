@@ -10,6 +10,7 @@ import { createSession, getActiveSession } from '@/data/repositories/sessionRepo
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { listTemplatesForProgramme } from '@/data/repositories/templateRepository';
 import type { template } from '@/data/schema';
+import { useInstrumentationStore } from '@/state/instrumentationStore';
 import { strings } from '@/strings';
 import { theme } from '@/theme';
 
@@ -43,6 +44,7 @@ export default function HomeScreen() {
   async function startSession(templateId: string | null, programmeId: string | null) {
     if (starting) return;
     setStarting(true);
+    useInstrumentationStore.getState().resetForNewSession();
     const created = await createSession(db, {
       userId,
       templateId,
@@ -113,6 +115,14 @@ export default function HomeScreen() {
 
         <Pressable style={styles.importLink} onPress={() => router.push('/import')}>
           <Text style={styles.importLinkLabel}>{strings.homeImportLink}</Text>
+        </Pressable>
+
+        <Pressable style={styles.importLink} onPress={() => router.push('/export')}>
+          <Text style={styles.importLinkLabel}>{strings.homeExportLink}</Text>
+        </Pressable>
+
+        <Pressable style={styles.importLink} onPress={() => router.push('/debug')}>
+          <Text style={styles.importLinkLabel}>{strings.homeDebugLink}</Text>
         </Pressable>
       </View>
     </SafeAreaView>

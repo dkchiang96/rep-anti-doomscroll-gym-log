@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useInstrumentationStore } from '@/state/instrumentationStore';
 import { strings } from '@/strings';
 import { theme } from '@/theme';
 
@@ -18,6 +19,7 @@ export function NumericKeypad({ visible, label, allowDecimal, onConfirm, onCance
   const [buffer, setBuffer] = useState('');
 
   function handleKey(key: string) {
+    useInstrumentationStore.getState().recordTap();
     if (key === '⌫') {
       setBuffer((b) => b.slice(0, -1));
       return;

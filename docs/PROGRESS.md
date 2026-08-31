@@ -269,3 +269,45 @@ Built the FR-7.1–FR-7.4 progress view: pick an exercise, see top-working-set w
 **Exit check:** `npm run typecheck` and `npm run test` pass. `progressRepository.test.ts` proves the real 16-Aug incline-dumbbell-press history produces four continuous points (22–22.5kg) with no consecutive-point ratio near 2x or 0.5x — the concrete form of "no artificial 50% drop" this environment can verify without a device.
 
 **Commit:** `feat(progress): per-exercise chart`
+
+## 2026-08-31 — Session 9 follow-up: stranded-screen navigation fix
+
+User tested on an emulator and landed directly on the Import screen with no way back — "the import function is the first thing i saw and there is nothing else to navigate to." Reported separately from Session 10, fixed as its own follow-up per the established pattern.
+
+**Root cause:** `archive.tsx` and `progress.tsx` had no back-to-Home affordance at all (no header registered for `archive`, no `useRouter`/back button on either). `import.tsx` and `programmes.tsx` had local "Back" buttons, but those only step within each screen's own multi-stage flow, never to Home. Every one of these screens relies entirely on the native-stack header's automatic back chevron, which only appears when there's push history *underneath* it — so any screen that ends up as the first entry in the stack (a stale Expo Go "resume last URL" on relaunch, a deep link, hot-reload state) strands the user with no in-app way out.
+
+**Fix:**
+- `src/components/HomeHeaderButton.tsx` — new shared header button: `router.canGoBack() ? router.back() : router.replace('/')`, so it behaves like a normal back button when there's history and falls back to Home when there isn't. `hitSlop` pads the tap target to the 56dp invariant despite the header's shorter visual height.
+- `src/app/_layout.tsx` — every secondary screen (`import`, `programmes`, `import-programme`, `progress`, and newly-registered `archive`, which previously had no header at all) now shares one `secondaryScreenHeaderOptions` object with `headerLeft: () => <HomeHeaderButton />`.
+- `src/app/import.tsx` — the post-import "Done" button now calls `router.replace('/')` instead of resetting back to a blank paste screen (user's explicit call: Done should go Home, not reload the import form).
+
+**Verification:** `npm run typecheck` and `npm run test` pass (127 tests, unchanged — this is navigation-only, nothing new to unit test). `npx expo export --platform android` bundles cleanly. The actual stranded-screen repro needs the emulator to confirm, same device-testing caveat as every prior entry.
+
+**Commit:** `fix(nav): add home header button to every secondary screen`
+
+## 2026-08-31 — Session 10: export, backup, release build
+
+Built the polish/export/field-test session: CSV and JSON export via the Android share sheet, automatic DB backup with 30-backup retention on session end, a taps-per-set/time-per-set debug screen, and the EAS release-APK config. The actual field test (train a real session using only REP) and the on-device measurements it requires are yours to run — I can't drive an emulator or phone from here.
+
+**What shipped:**
+- `src/domain/exportFormat.ts` — pure, tested `buildSetCsv` (one row per non-deleted set: date, session note, exercise, muscle group, equipment, load convention, weight, derived total, reps, set type — CSV-escaped) and `buildFullJsonExport` (structured dump of exercises/programmes/templates/template_exercises/sessions/session_exercises/sets). `deriveTotalKg` mirrors FR-3.12's per_side-doubling rule for the CSV's `total_kg` column.
+- `src/data/repositories/exportRepository.ts` — `listSetExportRows` (the flat CSV join) and `listFullExportData` (the seven-table JSON dump), both scoped by `userId` with every join leg excluding soft-deleted rows. Deliberately excludes plate inventory and rest-cue settings — this is a portable copy of the training log, not a full app-state backup (that's the separate SQLite-file backup below).
+- `src/app/export.tsx` — two buttons ("Export CSV" / "Export JSON"): builds the string, writes it to a cache file (`expo-file-system/legacy`), hands it to the OS share sheet (`expo-sharing`, new dependency). Reachable from a new "Export data" home-screen link.
+- `src/data/backup.ts` — `runBackupRetention()` copies the live SQLite file (via `expo-sqlite`'s `defaultDatabaseDirectory`, not a hardcoded path) into `<documentDirectory>backups/rep-<timestamp>.db`, then deletes anything beyond the 30 most recent (`selectBackupsToDelete`, pure and tested — filenames are ISO-timestamped so lexicographic sort is chronological). Hooked into `session.tsx`'s `handleEnd`, wrapped in try/catch so a backup failure (disk full, permissions) can never block ending the session itself. No restore UI — only backup + retention were asked for; exposed `DB_NAME` from `src/data/db.ts` so the two files share one source of truth for the filename.
+- `src/state/instrumentationStore.ts` — first real use of Zustand in this codebase (in the stack since Session 1, unused until now). In-memory only, cleared when a new session starts: a running tap counter and a list of completed-set records (`{exerciseName, setIndex, taps, seconds}`). `recordTap()` is called from every `Stepper` step (single tap and each hold-repeat tick) and every `NumericKeypad` key press; `recordSetCompletion` fires once, from `ExerciseBlock.commitNewSet` — the single choke point every commit path (ghost-confirm, add set, add drop set) already funnels through — so every commit path is captured without duplicating the hook three times.
+- `src/domain/instrumentationSummary.ts` — pure, tested `summarizeInstrumentation` (avg taps/set, avg seconds/set).
+- `src/app/debug.tsx` — the session's tap/time table plus averages, and a live battery percentage (`expo-battery`, new dependency, via `useBatteryLevel()`) so the 75-minute battery-drain measurement just needs a start/end reading instead of digging through Android's own battery UI. Reachable from a new "Debug" home-screen link.
+- Visual/token audit: grepped every `.tsx` for hardcoded hex colors — none found, every screen already sources from `theme.ts`. Touch targets are a mixed bag: several dense multi-button rows (exercise header controls, review-item actions, plate calculator, archive rows) use 32–44dp buttons under the 56dp invariant. Not retrofitted — resizing buttons packed into tight rows without a device to confirm nothing overlaps or wraps would be guessing, so it's logged here instead: `ExerciseBlock`'s ▲▼/SS/SKIP header buttons (36dp), several `import`/`import-programme`/`archive`/`plateCalculator` secondary actions (40–44dp), `RestClock`'s settings toggle (32dp), `ExercisePicker` rows (32dp). Worth a real look during the field test to see if any of these are actually hard to hit, versus just under the letter of the invariant.
+- `app.json` — added `android.package: "com.dc.rep"` (user's explicit choice, not guessed — this is a permanent identifier once published). `eas.json` — new `preview` build profile (`android.buildType: "apk"`, internal distribution).
+
+**Deviations from the brief:**
+- **I did not run `eas login` or `eas build` myself.** Both need your Expo account and upload the project to Expo's build servers — an account action and a network action affecting shared state, which I won't do without you driving it. The config is in place (`eas.json`, `app.json`'s package name); run `npx eas login` then `npx eas build --platform android --profile preview` yourself (via `!` in this session if you want the output captured here, or in your own terminal).
+- **Battery drain wasn't measured by me** — no device/emulator in this environment, same constraint noted every session. The debug screen's battery reading exists specifically so you can take the start/end numbers yourself during the field test.
+- **"Visual pass... check contrast at arm's length in bright light"** — verified the token-sourcing half (no hardcoded colors). The literal contrast-in-bright-light check needs a real device in real light; do it during the field test.
+- **Taps-per-set instrumentation is session-scoped and in-memory, not persisted.** It's a debug measurement of interaction cost, not training-log data — doesn't belong in the schema, and would need a real product decision (what counts as a "tap" worth storing forever) that wasn't asked for here.
+
+**Also fixed separately** (Session 9 follow-up, logged above, committed on its own before this session started): the stranded-screen navigation bug you hit on the emulator (landing on Import with no way back). Not part of this session's scope, called out here only so the two aren't confused in history.
+
+**Exit check:** `npm run typecheck` and `npm run test` pass (139 tests, up from 127). `npx expo export --platform android` bundles cleanly with the three new dependencies (`expo-sharing`, `expo-battery`, `zustand`) and the two new routes. The brief's actual exit check — training a real session using only REP, and logging every issue found afterward without fixing mid-session — is the next thing to do, on-device.
+
+**Commit:** `feat: export, backup, release build`

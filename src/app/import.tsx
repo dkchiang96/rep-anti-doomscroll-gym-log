@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -114,6 +115,7 @@ function ReviewItemCard({
 
 export default function ImportScreen() {
   const { db, userId } = useDatabase();
+  const router = useRouter();
 
   const [stage, setStage] = useState<Stage>('paste');
   const [rawText, setRawText] = useState('');
@@ -333,7 +335,7 @@ export default function ImportScreen() {
             {strings.importSummary(summary.sessionsImported, summary.exercisesImported, summary.setsImported)}
           </Text>
         )}
-        <Pressable style={styles.primaryButton} onPress={reset}>
+        <Pressable style={styles.primaryButton} onPress={() => router.replace('/')}>
           <Text style={styles.primaryButtonLabel}>{strings.importDoneButton}</Text>
         </Pressable>
       </View>

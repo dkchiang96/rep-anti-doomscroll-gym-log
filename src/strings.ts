@@ -1,6 +1,7 @@
 export const strings = {
   defaultUserDisplayName: 'You',
   loading: 'Loading…',
+  navHomeButton: 'Home',
 
   homeImportLink: 'Import Google Keep history',
   homeFreestyleLabel: 'Freestyle',
@@ -197,4 +198,24 @@ export const strings = {
   progressWeightLegend: 'Top weight (kg)',
   progressRepsLegend: 'Reps',
   progressTableHeading: 'Sessions',
+
+  homeExportLink: 'Export data',
+  exportTitle: 'Export',
+  exportIntro: 'Share a copy of your training log via any app that accepts a file.',
+  exportCsvButton: 'Export CSV (one row per set)',
+  exportJsonButton: 'Export JSON (full log)',
+  exportPreparing: 'Preparing export…',
+  exportEmpty: 'Nothing to export yet — log a session first.',
+  exportShareUnavailable: "Sharing isn't available on this device.",
+  exportError: 'Export failed — nothing was shared.',
+
+  homeDebugLink: 'Debug',
+  debugTitle: 'Debug',
+  debugBatteryLabel: (pct: number) => `Battery ${pct}%`,
+  debugBatteryUnavailable: 'Battery level unavailable',
+  debugSessionEmpty: 'No sets committed yet this session.',
+  debugAveragesLabel: (taps: number, seconds: number) => `Avg ${taps} taps, ${seconds}s per set`,
+  debugExerciseColumn: 'Set',
+  debugTapsColumn: 'Taps',
+  debugTimeColumn: 'Time (s)',
 } as const;

@@ -8,7 +8,7 @@ import { newId } from './id';
 import * as schema from './schema';
 import type { AppDatabase } from './types';
 
-const DB_NAME = 'rep.db';
+export const DB_NAME = 'rep.db';
 
 export interface AppInit {
   db: AppDatabase;
