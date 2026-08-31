@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull } from 'drizzle-orm';
 
 import { newId } from '../id';
 import { session } from '../schema';
@@ -23,6 +23,28 @@ export async function getSessionById(db: AppDatabase, userId: string, id: string
     .select()
     .from(session)
     .where(and(eq(session.id, id), eq(session.userId, userId), isNull(session.deletedAt)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+const ACTIVE_SESSION_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+// FR-1.2: a session is only auto-restored on launch if it's still in
+// progress and under 6 hours old. An older unended session is left alone —
+// not auto-closed, just not restored into.
+export async function getActiveSession(db: AppDatabase, userId: string, now: Date = new Date()) {
+  const rows = await db
+    .select()
+    .from(session)
+    .where(
+      and(
+        eq(session.userId, userId),
+        isNull(session.endedAt),
+        isNull(session.deletedAt),
+        gte(session.startedAt, new Date(now.getTime() - ACTIVE_SESSION_WINDOW_MS)),
+      ),
+    )
+    .orderBy(desc(session.startedAt))
     .limit(1);
   return rows[0] ?? null;
 }

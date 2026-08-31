@@ -27,6 +27,15 @@ export async function getProgrammeById(db: AppDatabase, userId: string, id: stri
   return rows[0] ?? null;
 }
 
+export async function getActiveProgramme(db: AppDatabase, userId: string) {
+  const rows = await db
+    .select()
+    .from(programme)
+    .where(and(eq(programme.userId, userId), eq(programme.isActive, true), isNull(programme.deletedAt)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function listProgrammes(db: AppDatabase, userId: string) {
   return db
     .select()

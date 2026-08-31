@@ -3,6 +3,12 @@ export const strings = {
   loading: 'Loading…',
 
   homeImportLink: 'Import Google Keep history',
+  homeFreestyleLabel: 'Freestyle',
+  homeNoProgrammeHint: 'No active programme — go freestyle or import your history.',
+
+  sessionElapsedLabel: 'Elapsed',
+  sessionEndButton: 'End session',
+  sessionLoggingPlaceholder: 'Set logging is coming next.',
 
   importTitle: 'Import Keep history',
   importPasteInstructions: 'Paste your Google Keep workout notes below.',

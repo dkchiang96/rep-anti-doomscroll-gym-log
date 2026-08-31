@@ -1,31 +1,43 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-import { initDatabase, type AppInit } from '@/data/db';
 import { DatabaseProvider } from '@/data/DatabaseProvider';
+import { initDatabase, type AppInit } from '@/data/db';
+import { strings } from '@/strings';
+import { theme } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   const [appInit, setAppInit] = useState<AppInit | null>(null);
 
   useEffect(() => {
-    initDatabase().then(setAppInit);
+    initDatabase().then((init) => {
+      setAppInit(init);
+      SplashScreen.hideAsync();
+    });
   }, []);
 
+  if (!appInit) return null;
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      {appInit ? (
-        <DatabaseProvider value={appInit}>
-          <AppTabs />
-        </DatabaseProvider>
-      ) : null}
+    <ThemeProvider value={DarkTheme}>
+      <StatusBar style="light" />
+      <DatabaseProvider value={appInit}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.color.bg } }}>
+          <Stack.Screen
+            name="import"
+            options={{
+              headerShown: true,
+              title: strings.importTitle,
+              headerStyle: { backgroundColor: theme.color.bg },
+              headerTintColor: theme.color.textPrimary,
+            }}
+          />
+        </Stack>
+      </DatabaseProvider>
     </ThemeProvider>
   );
 }

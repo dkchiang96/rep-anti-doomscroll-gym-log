@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 
 import { newId } from '../id';
 import { template } from '../schema';
@@ -32,6 +32,22 @@ export async function listTemplates(db: AppDatabase, userId: string) {
     .select()
     .from(template)
     .where(and(eq(template.userId, userId), isNull(template.deletedAt)));
+}
+
+// FR-1.1/5.2: the home screen's template buttons, in programme order.
+export async function listTemplatesForProgramme(db: AppDatabase, userId: string, programmeId: string) {
+  return db
+    .select()
+    .from(template)
+    .where(
+      and(
+        eq(template.userId, userId),
+        eq(template.programmeId, programmeId),
+        eq(template.isArchived, false),
+        isNull(template.deletedAt),
+      ),
+    )
+    .orderBy(asc(template.orderIndex));
 }
 
 export async function updateTemplate(db: AppDatabase, userId: string, id: string, patch: TemplateUpdate) {

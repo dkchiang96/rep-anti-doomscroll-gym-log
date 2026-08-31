@@ -1,98 +1,149 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { Redirect, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useDatabase } from '@/data/DatabaseProvider';
+import { getActiveProgramme } from '@/data/repositories/programmeRepository';
+import { createSession, getActiveSession } from '@/data/repositories/sessionRepository';
+import { listTemplatesForProgramme } from '@/data/repositories/templateRepository';
+import type { template } from '@/data/schema';
+import { strings } from '@/strings';
+import { theme } from '@/theme';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+type Template = typeof template.$inferSelect;
 
 export default function HomeScreen() {
+  const { db, userId } = useDatabase();
+  const router = useRouter();
+
+  const [activeSessionId, setActiveSessionId] = useState<string | null | undefined>(undefined);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [starting, setStarting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const active = await getActiveSession(db, userId);
+      if (cancelled) return;
+      setActiveSessionId(active?.id ?? null);
+      if (active) return;
+
+      const programme = await getActiveProgramme(db, userId);
+      const list = programme ? await listTemplatesForProgramme(db, userId, programme.id) : [];
+      if (!cancelled) setTemplates(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, userId]);
+
+  async function startSession(templateId: string | null, programmeId: string | null) {
+    if (starting) return;
+    setStarting(true);
+    const created = await createSession(db, {
+      userId,
+      templateId,
+      programmeId,
+      startedAt: new Date(),
+      endedAt: null,
+      note: null,
+      source: 'manual',
+    });
+    if (created) router.replace('/session');
+    setStarting(false);
+  }
+
+  if (activeSessionId === undefined) {
+    return <SafeAreaView style={styles.safeArea} />;
+  }
+
+  if (activeSessionId) {
+    return <Redirect href="/session" />;
+  }
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {templates.length === 0 ? (
+          <Text style={styles.hint}>{strings.homeNoProgrammeHint}</Text>
+        ) : (
+          templates.map((t) => (
+            <Pressable
+              key={t.id}
+              style={styles.templateButton}
+              disabled={starting}
+              onPress={() => startSession(t.id, t.programmeId)}>
+              <Text style={styles.templateLabel}>{t.name}</Text>
+            </Pressable>
+          ))
+        )}
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+        <Pressable style={styles.freestyleButton} disabled={starting} onPress={() => startSession(null, null)}>
+          <Text style={styles.freestyleLabel}>{strings.homeFreestyleLabel}</Text>
+        </Pressable>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <Pressable style={styles.importLink} onPress={() => router.push('/import')}>
+          <Text style={styles.importLinkLabel}>{strings.homeImportLink}</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
   safeArea: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+    backgroundColor: theme.color.bg,
   },
-  heroSection: {
+  container: {
+    flex: 1,
+    padding: 20,
+    gap: 12,
+    justifyContent: 'center',
+  },
+  templateButton: {
+    minHeight: theme.minTouchTarget * 1.5,
+    borderRadius: 12,
+    backgroundColor: theme.color.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
   },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
+  templateLabel: {
+    color: theme.color.textPrimary,
+    fontSize: 28,
+    fontWeight: '800',
     textTransform: 'uppercase',
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  freestyleButton: {
+    minHeight: theme.minTouchTarget,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.color.accentPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  freestyleLabel: {
+    color: theme.color.accentPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  hint: {
+    color: theme.color.textMuted,
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  importLink: {
+    minHeight: theme.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  importLinkLabel: {
+    color: theme.color.textMuted,
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });

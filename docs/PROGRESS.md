@@ -87,3 +87,26 @@ User tested against the real export and reported the Import tab wasn't showing u
 - "Session had no parseable exercises" and duplicate-date flags stay read-only — there's no single failed line to re-parse for either.
 
 **Verification:** `npm run typecheck` and `npm run test` pass (27 tests, up from 20). `npx expo export --platform android` still bundles.
+
+## 2026-08-31 — Session 3: session lifecycle
+
+Replaced Expo's default scaffold navigation with REP's real navigation skeleton and shipped session start/restore/end (FR-1.1–FR-1.3, FR-4.7).
+
+**What shipped:**
+- `src/app/_layout.tsx` — swapped `NativeTabs` for a plain `expo-router` `Stack` (the PRD's logging screen explicitly has "no tab, no drawer, no navigation" — FR-4.6 — so there was never going to be a real tab bar in this product). Fixed the `ThemeProvider` to `DarkTheme` (REP's palette has no light variant) and dropped the scaffold's animated splash overlay for a plain `SplashScreen.hideAsync()` once the DB is ready. Added `<StatusBar style="light" />`, needed now that the background is fixed near-black rather than scaffold blue.
+- `src/app/index.tsx` — real Home screen. Checks `getActiveSession` on mount and renders `<Redirect href="/session" />` before any template UI paints if one is found under 6 hours old (FR-1.2); otherwise lists the active programme's templates as large buttons plus a FREESTYLE button (FR-1.1), styled directly from `theme.ts` tokens. Starting a session awaits `createSession(...)` before navigating (FR-1.3 — write before render) and disables the buttons meanwhile. The `homeImportLink` string, added but unused in Session 2, is now wired to push `/import`.
+- `src/app/session.tsx` — new. Self-contained: loads the active session itself via `getActiveSession` rather than taking a route param, since only one session is ever current. Shows the template name (or "Freestyle"), a running elapsed timer (FR-4.7, `src/domain/duration.ts`'s `formatElapsed`), a placeholder line noting set logging comes next, and an End Session button (`endSession` then back to home). No back button — ending the session is the only way out.
+- `src/domain/duration.ts` — pure `formatElapsed(ms)`, tested: `MM:SS` under an hour, an unpadded `H:MM:SS` once an hour passes, negative durations clamp to zero.
+- Data layer: `getActiveSession` (sessionRepository — in-progress, not deleted, started within the last 6 hours), `getActiveProgramme` (programmeRepository — `isActive` row), `listTemplatesForProgramme` (templateRepository — non-archived templates for one programme, ordered by `orderIndex`). All follow the existing repository conventions. Covered by new `src/data/repositories/__tests__/sessionLifecycle.test.ts`.
+- Deleted the now-fully-dead Expo scaffold: the demo `Explore` tab, `NativeTabs` bar (`app-tabs.tsx`/`.web.tsx`), the animated splash/hero icon components, `ThemedText`/`ThemedView` and their `constants/theme.ts`/`hooks/use-color-scheme.ts`/`hooks/use-theme.ts` support, `hint-row`, `web-badge`, `external-link`, `collapsible`, and `global.css`. Confirmed dead by grep before removal — nothing outside that cluster and the two rewritten files referenced them.
+
+**Deviations from the brief:**
+- No explicit navigation guard against reaching `/session` with no active session (e.g. stale deep link) beyond the `<Redirect href="/" />` `session.tsx` already does when `getActiveSession` comes back empty — this was the natural consequence of making the screen self-contained rather than a gap that needed separate handling.
+- A stale in-progress session older than 6 hours is left untouched (not auto-ended) — the brief's restore window is a *display* rule (FR-1.2), and nothing in this session's scope calls for auto-closing old sessions. It just sits unrestored until a later session's UI can reach it.
+- Added `<StatusBar style="light" />`, not mentioned in the brief — without it, the default status bar icons would be invisible against the app's fixed near-black background now that the scaffold's light blue splash/background is gone.
+
+**Exit check:** starting a template session and a freestyle session both land on `/session` with the correct heading and a running elapsed timer; ending returns to `/`. Restore-on-relaunch was verified via the `getActiveSession` unit tests (in-progress-and-recent → restored, ended → not restored, >6h-old → not restored) rather than an actual force-kill on a device, since there's no emulator/device in this environment — worth a manual confirm on-device per the brief's acceptance criterion.
+
+**Verification:** `npm run typecheck` and `npm run test` pass (38 tests, up from 27). `npx expo export --platform android` still bundles with the scaffold removed and the new screens in place.
+
+**Commit:** `feat(session): lifecycle and crash restore`
