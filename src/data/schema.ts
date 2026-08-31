@@ -122,6 +122,8 @@ export const session = sqliteTable('session', {
   startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
   endedAt: integer('ended_at', { mode: 'timestamp_ms' }),
   note: text('note'),
+  // Verbatim source text for an imported session (e.g. the Google Keep note it came from). Null for manual sessions.
+  rawImportText: text('raw_import_text'),
   source: text('source', { enum: ['manual', 'import'] }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),

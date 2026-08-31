@@ -5,22 +5,27 @@ import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
-import { initDatabase } from '@/data/db';
+import { initDatabase, type AppInit } from '@/data/db';
+import { DatabaseProvider } from '@/data/DatabaseProvider';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const [dbReady, setDbReady] = useState(false);
+  const [appInit, setAppInit] = useState<AppInit | null>(null);
 
   useEffect(() => {
-    initDatabase().then(() => setDbReady(true));
+    initDatabase().then(setAppInit);
   }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      {dbReady ? <AppTabs /> : null}
+      {appInit ? (
+        <DatabaseProvider value={appInit}>
+          <AppTabs />
+        </DatabaseProvider>
+      ) : null}
     </ThemeProvider>
   );
 }

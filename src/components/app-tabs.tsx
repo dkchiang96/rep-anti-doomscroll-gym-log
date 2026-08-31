@@ -27,6 +27,15 @@ export default function AppTabs() {
           renderingMode="template"
         />
       </NativeTabs.Trigger>
+
+      {/* Temporary entry point for the Session 2 Keep importer — Session 3 replaces this tab bar entirely. */}
+      <NativeTabs.Trigger name="import">
+        <NativeTabs.Trigger.Label>Import</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          src={require('@/assets/images/tabIcons/explore.png')}
+          renderingMode="template"
+        />
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }

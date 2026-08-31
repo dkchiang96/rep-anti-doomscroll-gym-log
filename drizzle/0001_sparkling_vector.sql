@@ -1,0 +1,1 @@
+ALTER TABLE `session` ADD `raw_import_text` text;
