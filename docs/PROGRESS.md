@@ -445,3 +445,21 @@ Sixth session of the UI rebuild. Every screen not in the workout loop is built: 
 **Exit check:** `npm run typecheck`, `npm run test` (32 suites, 147 tests, unchanged — no new domain logic), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning) all pass. `npx expo export --platform android` bundles cleanly (1698 modules). Every screen is reachable from Home or Settings and every screen returns to Home via the shared header. The literal "no cards or rounded containers, all touch targets ≥56dp" check was done by inspection, not a device — several dense rows (template-exercise reorder/superset/remove buttons, plate-inventory quantity steppers, programme-import decision chips) use ~44dp controls with padding, the same accepted tradeoff Session 10 already logged for dense rows rather than a new regression. Worth a real on-device pass, same standing caveat as every prior session.
 
 **Commit:** `feat(ui): list screens`
+
+## 2026-09-02 — R5 follow-up: set-input row layout and sets-done → row count
+
+User tested on a real device and reported two things: the +/- steppers on the transition screen appeared not to respond ("I can't see the numbers for weights and reps"), and a request that the live screen's SETS DONE tally determine how many rows show up on the transition screen instead of an open-ended ghost/add-set list.
+
+**Root cause of the invisible numbers:** `SetInputRow`'s weight and reps controls were laid out side by side in one row (matching DESIGN-SPEC §5.7's ASCII mock literally) — two 72dp stepper pairs plus a 64pt `display-1` numeral each. The fixed-width controls alone (56dp warm-up toggle + four 72dp steppers + row gaps) add up to roughly a full phone's width, leaving the two numerals almost no room; they were being squeezed to near-zero width rather than clipped or shrunk, which read as "nothing there to look at" and, by extension, "the buttons don't do anything."
+
+**Fix:** `src/components/ui/SetInputRow.tsx` — weight and reps controls now stack vertically, each getting the row's full width, with a small `KG`/`REPS` caption above each. DESIGN-SPEC.md §5.7 updated with a corrected mock and a note explaining the change (design docs stay honest about what shipped, not just what was planned).
+
+**SETS DONE → row count (D13 amended again, see DESIGN-SPEC.md):**
+- `src/app/session.tsx` — `NEXT EXERCISE` now carries the live screen's current `setsDone` tally to `/transition` as a route param.
+- `src/app/transition.tsx` — reads that param and, when present, renders exactly that many rows (ghost-prefilled from history where available, blank — 0kg/8 reps, matching the existing "+ Add set" default — beyond it), instead of the old "however many ghost/committed rows exist" count. A tally of 0 renders 0 rows even when ghost history exists, taken literally per the user's explicit choice. `applyValueToRow` was reworked to read a row's own merged values (`row.weightKg`/`row.reps`/`row.setType`/`row.parentIndex`) instead of indexing directly into `ghostSets[row.rowIndex]`, since a row padded out beyond real ghost data has no backing `GhostSet` to index into. Arriving some other way (no `setsDone` param, e.g. nothing upstream of this change ever needed one) falls back to the previous open-ended behaviour, so the exercise-picker-driven "jump to a mid-session exercise" flow (which has no live-screen tally to carry) is unaffected.
+- Sequential top-to-bottom ghost-row confirmation is unchanged — user's explicit call to keep it, so this session's fix is "show the right row count up front," not "make every row independently editable."
+- Also confirmed via conversation what the `W` toggle does (warm-up marker, DESIGN-SPEC §5.7) — no code change, just previously unlabeled beyond the single glyph the spec calls for.
+
+**Verification:** `npm run typecheck`, `npm run test` (32 suites, 147 tests, unchanged), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning) all pass. `npx expo export --platform android` bundles cleanly. The actual "numbers are now legible and the row count matches SETS DONE" checks need the user's device, per every prior session's standing caveat.
+
+**Commit:** `fix(ui): set-input row layout and sets-done row count`

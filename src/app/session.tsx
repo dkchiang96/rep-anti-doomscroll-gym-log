@@ -150,16 +150,20 @@ export default function LiveSession() {
 
   if (state.status === 'loading') return null;
 
-  const goToTransition = () => {
+  const goToTransition = (setsDone: number) => {
     // D10: the clock is persistent chrome, not a fresh screen — the shared
     // stopwatchStore (attached below) is what keeps it continuous across
     // this push, not anything passed here. Freestyle sessions (no current
     // exercise yet — R5's picker is what assigns one) still navigate, so the
     // slab is never a dead tap; the transition screen shows an empty state.
+    // setsDone carries the live screen's tally across so the transition
+    // screen shows exactly that many rows — see docs/PROGRESS.md's R5
+    // follow-up for why this reverses D13's original "never the source of
+    // truth" wording.
     router.push({
       pathname: '/transition',
       params: state.exercise
-        ? { sessionExerciseId: state.exercise.sessionExerciseId, exerciseId: state.exercise.id }
+        ? { sessionExerciseId: state.exercise.sessionExerciseId, exerciseId: state.exercise.id, setsDone: String(setsDone) }
         : {},
     });
   };
@@ -176,7 +180,7 @@ function LiveSessionScreen({
   db: ReturnType<typeof useDatabase>['db'];
   userId: string;
   state: Extract<LoadState, { status: 'ready' }>;
-  onNextExercise: () => void;
+  onNextExercise: (setsDone: number) => void;
 }) {
   const { session, title, exercise, flashIntervalMs } = state;
   useAttachStopwatch(db, userId, session);
@@ -263,7 +267,7 @@ function LiveSessionScreen({
           </View>
         </View>
 
-        <Pressable style={styles.nextExerciseTouch} onPress={onNextExercise}>
+        <Pressable style={styles.nextExerciseTouch} onPress={() => onNextExercise(setsDone)}>
           <Slab tone="primary" height={size.bottomSlab}>
             <Text style={[type.label, styles.onSlabText]}>{strings.sessionNextExerciseLabel}</Text>
           </Slab>

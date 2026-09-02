@@ -61,6 +61,10 @@ type LoadState =
 
 const DEFAULT_FLASH_INTERVAL_MS = 30_000;
 const DEFAULT_WEIGHT_STEP_KG = 2.5;
+// Fallback reps for a row padded out beyond real ghost/committed data (a
+// setsDone count higher than anything history or this session has yet) —
+// same fallback handleAddSet already used for a brand-new row.
+const DEFAULT_BLANK_REPS = 8;
 
 interface MergedRow {
   rowIndex: number;
@@ -78,7 +82,7 @@ function round2(value: number): number {
 export default function Transition() {
   const { db, userId } = useDatabase();
   const router = useRouter();
-  const params = useLocalSearchParams<{ sessionExerciseId?: string; exerciseId?: string }>();
+  const params = useLocalSearchParams<{ sessionExerciseId?: string; exerciseId?: string; setsDone?: string }>();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
@@ -106,6 +110,8 @@ export default function Transition() {
 
   const sessionExerciseId = typeof params.sessionExerciseId === 'string' ? params.sessionExerciseId : null;
   const exerciseId = typeof params.exerciseId === 'string' ? params.exerciseId : null;
+  const setsDoneParsed = typeof params.setsDone === 'string' ? Number(params.setsDone) : NaN;
+  const setsDone = Number.isFinite(setsDoneParsed) ? setsDoneParsed : null;
 
   return (
     <TransitionScreen
@@ -114,6 +120,7 @@ export default function Transition() {
       state={state}
       sessionExerciseId={sessionExerciseId}
       exerciseId={exerciseId}
+      setsDone={setsDone}
     />
   );
 }
@@ -124,12 +131,19 @@ function TransitionScreen({
   state,
   sessionExerciseId,
   exerciseId,
+  setsDone,
 }: {
   db: AppDatabase;
   userId: string;
   state: Extract<LoadState, { status: 'ready' }>;
   sessionExerciseId: string | null;
   exerciseId: string | null;
+  // The live screen's SETS DONE tally at the moment NEXT EXERCISE was
+  // tapped, or null when arriving some other way (e.g. the exercise picker's
+  // handlePickNextExercise, which doesn't carry a live-screen tally at all).
+  // Null falls back to the old open-ended ghost-prefill behaviour; a real
+  // number (0 included) is taken literally as "show exactly this many rows."
+  setsDone: number | null;
 }) {
   const { session, flashIntervalMs } = state;
   useAttachStopwatch(db, userId, session);
@@ -196,7 +210,12 @@ function TransitionScreen({
   }, [db, userId, sessionExerciseId, exerciseId, session.id]);
 
   const mergedRows = useMemo<MergedRow[]>(() => {
-    const count = Math.max(committedSets.length, ghostSets.length);
+    // setsDone (the live screen's tally) is taken literally when present:
+    // exactly that many rows, ghost-prefilled where history covers them,
+    // blank beyond it. Null (arrived some other way) falls back to the old
+    // open-ended "however many ghost/committed rows exist" behaviour.
+    const count =
+      setsDone != null ? Math.max(committedSets.length, setsDone) : Math.max(committedSets.length, ghostSets.length);
     const rows: MergedRow[] = [];
     for (let i = 0; i < count; i++) {
       if (i < committedSets.length) {
@@ -211,7 +230,7 @@ function TransitionScreen({
           parentIndex: parentIndex >= 0 ? parentIndex : null,
         });
       } else {
-        const ghost = ghostSets[i];
+        const ghost = ghostSets[i] ?? { weightKg: 0, reps: DEFAULT_BLANK_REPS, setType: 'working' as const, parentIndex: null };
         rows.push({
           rowIndex: i,
           isGhost: true,
@@ -223,7 +242,7 @@ function TransitionScreen({
       }
     }
     return rows;
-  }, [committedSets, ghostSets]);
+  }, [committedSets, ghostSets, setsDone]);
 
   const displayOrder = useMemo(
     () => orderRowsForDisplay(mergedRows.map((r) => ({ index: r.rowIndex, parentIndex: r.parentIndex }))),
@@ -232,9 +251,9 @@ function TransitionScreen({
   const rowsByIndex = useMemo(() => new Map(mergedRows.map((r) => [r.rowIndex, r])), [mergedRows]);
   const nextGhostIndex = committedSets.length;
 
-  function resolveGhostParentId(ghost: GhostSet): string | null {
-    if (ghost.parentIndex == null) return null;
-    return committedSets[ghost.parentIndex]?.id ?? null;
+  function resolveParentId(parentIndex: number | null): string | null {
+    if (parentIndex == null) return null;
+    return committedSets[parentIndex]?.id ?? null;
   }
 
   async function commitNewSet(input: { weightKg: number; reps: number; setType: SetType; parentSetId: string | null }) {
@@ -260,12 +279,14 @@ function TransitionScreen({
   function applyValueToRow(row: MergedRow, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
     if (row.isGhost) {
       if (row.rowIndex !== nextGhostIndex) return; // gated: ghosts confirm top-to-bottom (see setRowOrdering's index-contiguity note)
-      const ghost = ghostSets[row.rowIndex];
+      // Use the already-merged row's own values, not ghostSets[row.rowIndex]
+      // directly — a row padded out beyond real ghost data (setsDone higher
+      // than history) has no backing GhostSet to index into.
       void commitNewSet({
-        weightKg: patch.weightKg ?? ghost.weightKg,
-        reps: patch.reps ?? ghost.reps,
-        setType: patch.setType ?? ghost.setType,
-        parentSetId: resolveGhostParentId(ghost),
+        weightKg: patch.weightKg ?? row.weightKg,
+        reps: patch.reps ?? row.reps,
+        setType: patch.setType ?? row.setType,
+        parentSetId: resolveParentId(row.parentIndex),
       });
       return;
     }

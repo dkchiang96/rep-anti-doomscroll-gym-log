@@ -37,7 +37,7 @@ These are product decisions, recorded here because they determine the layout.
 | **D10** | **The clock never stops or disappears when logging.** On the transition screen it shrinks to a compact bar and keeps running. It is not a separate screen — it is persistent chrome. |
 | **D11** | The 30s cue is a **burst**: the whole screen fills with accent colour several times in rapid succession, not one slow pulse. |
 | **D12** | **Timer Plus is the tiebreaker.** Where this spec is silent or ambiguous, match the Timer Plus screenshots. Do not invent. |
-| **D13** | **Amends D6.** The live screen also shows a manual sets-done counter with `−`/`+` steppers, in the canvas zone next to the transport button. It is a scratch tally, not training data: it never touches the timer, never writes to the `sets` table, and is not the source of truth for what the transition screen ghost-prefills or confirms. It resets whenever the exercise changes. Added per user request during the R1 gate (2026-09-02) — quick on-the-fly counting while lifting, decoupled from real set logging (D7). |
+| **D13** | **Amends D6.** The live screen also shows a manual sets-done counter (tap to increment, long-press to decrement — see R3's deviation note; not the two flanking `−`/`+` steppers originally specified below), in the canvas zone next to the transport button. It never touches the timer and never writes to the `sets` table directly. It resets whenever the exercise changes. **Amended again 2026-09-02 (R5 follow-up):** the count now *is* the source of truth for how many rows the transition screen shows — tapping NEXT EXERCISE carries the live tally across, and the transition screen renders exactly that many rows (ghost-prefilled from history where available, blank beyond it), reversing this row's original "never the source of truth" wording. A tally of 0 shows 0 rows, even when ghost history exists for that exercise — the user's explicit call. |
 
 ---
 
@@ -278,9 +278,21 @@ The compact timer bar takes only 12–15% of the screen, so **the input controls
 └────────────────────────────────────┘
 ```
 
+**Corrected 2026-09-02 (R5 follow-up).** The mock above puts weight and reps controls side by side in one row. On a real device this doesn't fit: two 72dp stepper pairs plus a 64pt numeral each need more width than a phone has, and the numerals were squeezed to near-zero width — effectively invisible, reported by the user as "the +/- buttons don't work." Weight and reps controls now **stack vertically**, each getting the row's full width, with a small `KG`/`REPS` caption above each:
+
+```
+┌────────────────────────────────────┐
+│  SET 1                             │
+│  KG                                │
+│  [W] [ − ]      22.5       [ + ]   │
+│  REPS                              │
+│      [ − ]       10        [ + ]   │
+└────────────────────────────────────┘
+```
+
 | Property | Value |
 |---|---|
-| Row height | **88dp minimum** |
+| Row height | **88dp minimum**, grows to fit the stacked layout above |
 | Numerals | `display-1` (64), tabular figures |
 | Stepper buttons | **72dp squares**, `divider` border, no fill, black-on-canvas glyph |
 | Long-press | Accelerates in two stages |

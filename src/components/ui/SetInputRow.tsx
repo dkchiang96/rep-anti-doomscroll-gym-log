@@ -55,10 +55,15 @@ export function SetInputRow({
     <View style={[styles.root, indent ? styles.indent : null, disabled ? styles.disabled : null]}>
       <View style={styles.headerRow}>
         <Text style={[type.caption, styles.headerLabel]}>{setLabel}</Text>
-        <Text style={[type.caption, styles.headerLabel]}>{strings.setInputWeightHeading}</Text>
-        <Text style={[type.caption, styles.headerLabel]}>{strings.setInputRepsHeading}</Text>
       </View>
-      <View style={styles.controlsRow}>
+
+      {/* Weight and reps controls stack vertically, each getting the row's
+          full width — DESIGN-SPEC §5.7's side-by-side mock doesn't leave
+          room for two 72dp stepper pairs plus a 64pt numeral on a real
+          phone width; on-device testing showed the numerals squeezed to
+          near-zero width and effectively invisible. */}
+      <Text style={[type.caption, styles.groupCaption]}>{strings.setInputWeightHeading}</Text>
+      <View style={styles.controlRow}>
         <Pressable
           onPress={onToggleWarmup}
           disabled={!onToggleWarmup || disabled}
@@ -68,46 +73,44 @@ export function SetInputRow({
             {strings.setInputWarmupGlyph}
           </Text>
         </Pressable>
+        <StepperButton
+          label={strings.setInputStepperMinus}
+          onPress={() => onWeightStep(-1)}
+          size={size.stepper}
+          disabled={disabled}
+        />
+        <Pressable onPress={onTapWeight} disabled={!onTapWeight || disabled} style={styles.valueTouch}>
+          <Text style={[type.display1, tabularNums, styles.value, { color: valueColor }]} numberOfLines={1}>
+            {weightKg}
+          </Text>
+        </Pressable>
+        <StepperButton
+          label={strings.setInputStepperPlus}
+          onPress={() => onWeightStep(1)}
+          size={size.stepper}
+          disabled={disabled}
+        />
+      </View>
 
-        <View style={styles.group}>
-          <StepperButton
-            label={strings.setInputStepperMinus}
-            onPress={() => onWeightStep(-1)}
-            size={size.stepper}
-            disabled={disabled}
-          />
-          <Pressable onPress={onTapWeight} disabled={!onTapWeight || disabled} style={styles.valueTouch}>
-            <Text style={[type.display1, tabularNums, styles.value, { color: valueColor }]} numberOfLines={1}>
-              {weightKg}
-            </Text>
-          </Pressable>
-          <StepperButton
-            label={strings.setInputStepperPlus}
-            onPress={() => onWeightStep(1)}
-            size={size.stepper}
-            disabled={disabled}
-          />
-        </View>
-
-        <View style={styles.group}>
-          <StepperButton
-            label={strings.setInputStepperMinus}
-            onPress={() => onRepsStep(-1)}
-            size={size.stepper}
-            disabled={disabled}
-          />
-          <Pressable onPress={onTapReps} disabled={!onTapReps || disabled} style={styles.valueTouch}>
-            <Text style={[type.display1, tabularNums, styles.value, { color: valueColor }]} numberOfLines={1}>
-              {reps}
-            </Text>
-          </Pressable>
-          <StepperButton
-            label={strings.setInputStepperPlus}
-            onPress={() => onRepsStep(1)}
-            size={size.stepper}
-            disabled={disabled}
-          />
-        </View>
+      <Text style={[type.caption, styles.groupCaption]}>{strings.setInputRepsHeading}</Text>
+      <View style={styles.controlRow}>
+        <StepperButton
+          label={strings.setInputStepperMinus}
+          onPress={() => onRepsStep(-1)}
+          size={size.stepper}
+          disabled={disabled}
+        />
+        <Pressable onPress={onTapReps} disabled={!onTapReps || disabled} style={styles.valueTouch}>
+          <Text style={[type.display1, tabularNums, styles.value, { color: valueColor }]} numberOfLines={1}>
+            {reps}
+          </Text>
+        </Pressable>
+        <StepperButton
+          label={strings.setInputStepperPlus}
+          onPress={() => onRepsStep(1)}
+          size={size.stepper}
+          disabled={disabled}
+        />
       </View>
 
       <View style={styles.metaRow}>
@@ -154,7 +157,11 @@ const styles = StyleSheet.create({
   headerLabel: {
     color: color.textMuted,
   },
-  controlsRow: {
+  groupCaption: {
+    color: color.textMuted,
+    marginTop: 10,
+  },
+  controlRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
@@ -171,12 +178,6 @@ const styles = StyleSheet.create({
   warmupToggleOn: {
     backgroundColor: color.slabSecondary,
     borderColor: color.slabSecondary,
-  },
-  group: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   valueTouch: {
     flex: 1,
