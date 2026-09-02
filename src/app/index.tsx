@@ -11,10 +11,10 @@ import type { programme as programmeTable, template as templateTable } from '@/d
 import { strings } from '@/strings';
 import { color, size, type } from '@/theme';
 
-// DESIGN-SPEC.md §5.6.1 — slabs on top, list rows underneath. PROGRAMMES,
-// PROGRESS and HISTORY rows (and the "create a programme" slab) are disabled
-// until R5/R6 build their destinations — present, never hidden, same pattern
-// as the settings.tsx stub.
+// DESIGN-SPEC.md §5.6.1 — slabs on top, list rows underneath. All four
+// destination rows are live as of R6; the "create a programme" slab still
+// replaces the template slabs (rather than being hidden) when no programme
+// is active, same pattern as the settings.tsx stub.
 
 type Programme = typeof programmeTable.$inferSelect;
 type Template = typeof templateTable.$inferSelect;
@@ -99,8 +99,8 @@ export default function Home() {
       <View style={styles.gap} />
 
       <ListRow variant="navigation" label={strings.homeRowProgrammes} onPress={() => router.push('/programmes')} />
-      <ListRow variant="navigation" label={strings.homeRowProgress} disabled onPress={() => {}} />
-      <ListRow variant="navigation" label={strings.homeRowHistory} disabled onPress={() => {}} />
+      <ListRow variant="navigation" label={strings.homeRowProgress} onPress={() => router.push('/progress')} />
+      <ListRow variant="navigation" label={strings.homeRowHistory} onPress={() => router.push('/history')} />
       <ListRow variant="navigation" label={strings.homeRowSettings} onPress={() => router.push('/settings')} />
     </ScrollView>
   );

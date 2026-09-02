@@ -227,6 +227,11 @@ export const strings = {
   archiveBulkRestoreButton: (n: number) => `Restore (${n})`,
   archiveBackButton: 'Back',
 
+  historyTitle: 'History',
+  historyEmpty: 'No sessions logged yet.',
+  historyInProgress: 'In progress',
+  historyDetailEmpty: 'No exercises logged.',
+
   progressTitle: 'Progress',
   progressPickPrompt: 'Pick an exercise to see its history.',
   progressChangeExerciseButton: 'Change exercise',

@@ -54,6 +54,8 @@ function AppShell({ appInit }: { appInit: AppInit | null }) {
           <Stack.Screen name="import-programme" options={secondaryScreenHeaderOptions} />
           <Stack.Screen name="import" options={secondaryScreenHeaderOptions} />
           <Stack.Screen name="archive" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="history" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="progress" options={secondaryScreenHeaderOptions} />
           <Stack.Screen name="export" options={secondaryScreenHeaderOptions} />
           <Stack.Screen name="debug" options={secondaryScreenHeaderOptions} />
         </Stack>
