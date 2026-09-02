@@ -129,6 +129,14 @@ export const session = sqliteTable('session', {
   programmeId: text('programme_id').references(() => programme.id),
   startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
   endedAt: integer('ended_at', { mode: 'timestamp_ms' }),
+  // R3 stopwatch (src/domain/stopwatch.ts): elapsed is always derived from these
+  // timestamps, never a tick counter, so it survives the app being killed.
+  // clockStartedAt is set once on first START and never moves; clockPausedAt is
+  // set while paused and cleared on resume, at which point the paused span is
+  // folded into clockAccumulatedPauseMs. All null/0 means "never started".
+  clockStartedAt: integer('clock_started_at', { mode: 'timestamp_ms' }),
+  clockPausedAt: integer('clock_paused_at', { mode: 'timestamp_ms' }),
+  clockAccumulatedPauseMs: integer('clock_accumulated_pause_ms').notNull().default(0),
   note: text('note'),
   // Verbatim source text for an imported session (e.g. the Google Keep note it came from). Null for manual sessions.
   rawImportText: text('raw_import_text'),

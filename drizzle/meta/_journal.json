@@ -29,6 +29,13 @@
       "when": 1788147289136,
       "tag": "0003_ambitious_bloodaxe",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788334863423,
+      "tag": "0004_volatile_king_bedlam",
+      "breakpoints": true
     }
   ]
 }

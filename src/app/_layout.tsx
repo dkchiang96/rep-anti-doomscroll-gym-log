@@ -43,7 +43,9 @@ function AppShell({ appInit }: { appInit: AppInit | null }) {
       <DatabaseProvider value={appInit}>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.color.bg } }}>
           <Stack.Screen name="index" />
-          <Stack.Screen name="session" options={secondaryScreenHeaderOptions} />
+          {/* No header here — DESIGN-SPEC.md §5.1/R3: the live screen owns its
+              own top-bar zone and deliberately has no back button. */}
+          <Stack.Screen name="session" />
           <Stack.Screen name="settings" options={secondaryScreenHeaderOptions} />
         </Stack>
       </DatabaseProvider>

@@ -26,6 +26,12 @@ export const strings = {
   sessionEndButton: 'End session',
   sessionLoggingPlaceholder: 'Set logging is coming next.',
 
+  sessionTargetHeading: 'Target:',
+  sessionSetsDoneLabel: 'Sets done',
+  sessionTransportStartLabel: 'Start',
+  sessionTransportPauseLabel: 'Pause',
+  sessionNextExerciseLabel: 'Next exercise',
+
   importTitle: 'Import Keep history',
   importPasteInstructions: 'Paste your Google Keep workout notes below.',
   importYearLabel: 'Year',
