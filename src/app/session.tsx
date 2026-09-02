@@ -6,9 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Clock, FlashOverlay, Slab, TransportButton, TransportResetButton } from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
+import { runBackupRetention } from '@/data/backup';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { getExerciseById } from '@/data/repositories/exerciseRepository';
-import { getActiveSession } from '@/data/repositories/sessionRepository';
+import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
 import {
   createSessionExercise,
   listSessionExercisesBySession,
@@ -29,6 +30,14 @@ import { color, liveZoneFlex, size, tabularNums, type } from '@/theme';
 // back button (D9 is intentionally suspended here — the Android system back
 // gesture still works; the in-app UI just never offers a way to leave a
 // running workout by accident).
+//
+// One addition beyond the five zones: long-pressing the top bar title arms a
+// tap-to-confirm "end session" state. R2's placeholder had an End Session
+// button specifically so a running session could never strand the user (D9);
+// R3's rewrite dropped it entirely when it moved to the strict five-zone
+// layout, leaving no way to close out a workout at all. The top bar is
+// otherwise dead space, so it doubles as the affordance rather than adding a
+// sixth zone.
 
 type Session = typeof sessionTable.$inferSelect;
 
@@ -183,11 +192,47 @@ function LiveSessionScreen({
   onNextExercise: (setsDone: number) => void;
 }) {
   const { session, title, exercise, flashIntervalMs } = state;
+  const router = useRouter();
   useAttachStopwatch(db, userId, session);
   const stopwatch = useStopwatch();
   const flashTone = useFlashPreferenceStore((s) => s.tone);
   const flashRef = useRef<FlashOverlayHandle>(null);
   const previousElapsedRef = useRef(stopwatch.elapsedMs);
+
+  // No dedicated "end session" control was ever rebuilt after R3 replaced
+  // R2's placeholder with the strict five-zone screen — the top bar is
+  // otherwise unused space, so it doubles as the affordance. Long-press
+  // (matching RESET's pattern) arms a brief tap-to-confirm state rather than
+  // acting immediately, so an accidental long-press on the title can't end a
+  // running workout; it auto-disarms if untouched.
+  const [endArmed, setEndArmed] = useState(false);
+  const disarmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+    };
+  }, []);
+
+  function armEndConfirm() {
+    setEndArmed(true);
+    if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+    disarmTimeoutRef.current = setTimeout(() => setEndArmed(false), 4000);
+  }
+
+  async function handleTopBarPress() {
+    if (!endArmed) return;
+    if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+    await endSession(db, userId, session.id);
+    // Backup failure must never block ending the session — same try/catch
+    // the pre-rebuild build wrapped this call in.
+    try {
+      await runBackupRetention();
+    } catch {
+      // intentionally swallowed
+    }
+    router.replace('/');
+  }
 
   useEffect(() => {
     const previous = previousElapsedRef.current;
@@ -225,11 +270,16 @@ function LiveSessionScreen({
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-        <View style={styles.topBar}>
-          <Text style={[type.heading, styles.topBarTitle]} numberOfLines={1}>
-            {title.toUpperCase()}
+        <Pressable
+          style={styles.topBar}
+          onPress={() => void handleTopBarPress()}
+          onLongPress={armEndConfirm}
+          delayLongPress={600}
+        >
+          <Text style={[type.heading, endArmed ? styles.topBarTitleArmed : styles.topBarTitle]} numberOfLines={1}>
+            {endArmed ? strings.sessionEndConfirmPrompt.toUpperCase() : title.toUpperCase()}
           </Text>
-        </View>
+        </Pressable>
 
         <Slab tone="primary" flex={liveZoneFlex.yellow}>
           <Text style={[type.display2, styles.onSlabText]}>{exerciseName}</Text>
@@ -304,6 +354,11 @@ const styles = StyleSheet.create({
   },
   topBarTitle: {
     color: color.textPrimary,
+  },
+  // §2's danger token is reserved for destructive confirmations — this is
+  // the confirm-armed state of the end-session long-press, not a normal label.
+  topBarTitleArmed: {
+    color: color.danger,
   },
   onSlabText: {
     color: color.onSlab,

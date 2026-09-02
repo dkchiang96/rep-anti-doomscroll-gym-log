@@ -510,3 +510,13 @@ Seventh session of the UI rebuild. `src/app/history.tsx` and `src/app/progress.t
 **Exit check:** `npm run typecheck`, `npm run test` (32 suites, 147 tests, unchanged — no new domain logic), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning) all pass. `progressRepository.test.ts` still asserts the incline-dumbbell-press fixture produces four continuous points (22–22.5kg) with no consecutive-point ratio near 2x/0.5x across the 16 August convention change — the brief's literal exit check. `npx expo export --platform android` bundles cleanly. On-device confirmation that the chart actually reads as continuous by eye, and that History's expand/collapse and Progress's picker feel right at arm's length, is yours to run — same standing caveat as every prior session.
 
 **Commit:** `feat(progress): history and chart`
+
+## 2026-09-02 — R6 follow-up: restore the missing end-session control
+
+User asked whether there being no way to end a workout was expected — it wasn't. R2's placeholder screen had an explicit End Session button (added specifically so a running session could never strand the user, per D9); R3 rewrote `session.tsx` into the strict five-zone live screen and dropped it without adding it anywhere else. Nothing since then called the still-working `endSession` repository function, and `runBackupRetention` (fixed in R0, meant to fire on session end) was never wired back in either.
+
+**Fix, per the user's chosen option:** long-pressing the top bar title (otherwise dead space in the five-zone layout) arms a brief tap-to-confirm state — title text swaps to "Tap to end session" in `danger` red (§2's destructive-confirmation token) for 4 seconds, auto-disarming if untouched — so an accidental long-press can't end a running workout. Confirming calls `endSession`, then `runBackupRetention` wrapped in try/catch (a backup failure must never block ending the session, same guarantee the pre-rebuild build made), then returns Home. This mirrors RESET's existing long-press-only pattern (§5.3) rather than introducing a modal, which the design tokens rule out.
+
+**Verification:** `npm run typecheck`, `npm run test` (147 tests, unchanged), and `npm run lint` (0 errors, same pre-existing `plates.ts` warning) all pass. On-device confirmation of the long-press timing and the confirm-state legibility is yours to check, same standing caveat as every prior session.
+
+**Commit:** `fix(session): restore end-session control via top-bar long-press`

@@ -30,6 +30,7 @@ export const strings = {
 
   sessionElapsedLabel: 'Elapsed',
   sessionEndButton: 'End session',
+  sessionEndConfirmPrompt: 'Tap to end session',
   sessionLoggingPlaceholder: 'Set logging is coming next.',
 
   sessionTargetHeading: 'Target:',
