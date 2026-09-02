@@ -330,3 +330,17 @@ First session of the UI rebuild (`docs/REBUILD-SESSIONS.md`), on a new `rebuild-
 **Exit check:** `npm run typecheck`, `npm run test` (30 suites, 133 tests, all passing — two new for `toFileUri`), and `npm run lint` all pass. `npx expo export --platform android` bundles cleanly (1415 modules). Real-device launch confirming `REP` renders with no red screen and no backup-error toast is still open — no device in this environment, same standing caveat as every prior session.
 
 **Commit:** `chore: strip UI layer, fix backup and lint`
+
+## 2026-09-02 — R1: design system and the verification gate
+
+Second session of the UI rebuild. Bebas Neue + Inter loaded via `expo-font`, `theme.ts` rewritten to the DESIGN-SPEC.md §2/§3 tokens, and the `src/components/ui/` primitives built: `Slab`, `Clock`, `TransportButton` (+ `TransportResetButton`), `ListRow`, `FlashOverlay`, `SetInputRow`, and a shared `StepperButton`. A throwaway `src/app/showcase.tsx` renders the full §5.1 live layout at a fixed `12:47`, a flash-burst trigger, a clock fast-forward demo (59:50 → 60:10, to eyeball the hour-boundary reflow rule), one confirmed and one ghost `SetInputRow`, and one of each `ListRow` variant. `index.tsx` redirects to `/showcase` until R2 replaces it with the real Home screen.
+
+**Verification gate (DESIGN-SPEC.md §7):** run on-device in Expo Go, screenshots compared against the Timer Plus references. Font, slabs, zone proportions, contrast, clock size, transport button, set-input sizing, list-row variants, and absence of cards all passed on first render — no showcase rework needed. The flash burst was confirmed live on-device by the user (full-screen, reads as a burst, not a single blink) since a static screenshot can't show it.
+
+**Deviation from the brief — new D13:** mid-gate, the user asked to add a manual sets-done counter (`−`/`+` steppers flanking the count) to the live screen's canvas zone. This amends D6 ("the live screen shows only clock, exercise name, target") — recorded as D13 in DESIGN-SPEC.md rather than silently drifting from the spec. It's a scratch tally only: no connection to the stopwatch, never writes to the `sets` table, not the source of truth for the transition screen's ghost pre-fill, and resets whenever the exercise changes. Built using the shared `StepperButton` extracted from `SetInputRow`'s existing stepper (now used at two sizes: 72dp in set rows, 56dp here).
+
+**Also fixed:** removed a stray `.tmp-expo-start.log` picked up by `git status`; not part of the app.
+
+**Exit check:** `npm run typecheck`, `npm run test` (31 suites, 137 tests, up from 133), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning, untouched) all pass. Verification gate passed on-device per the user's screenshots and live confirmation.
+
+**Commit:** `feat(ui): design system and showcase`

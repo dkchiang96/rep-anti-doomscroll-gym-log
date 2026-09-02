@@ -220,4 +220,28 @@ export const strings = {
   debugExerciseColumn: 'Set',
   debugTapsColumn: 'Taps',
   debugTimeColumn: 'Time (s)',
+
+  fontGateError: 'Design system fonts failed to load. Bebas Neue and Inter are required — check FontGate.',
+
+  setInputWeightHeading: 'Kg',
+  setInputRepsHeading: 'Reps',
+  setInputWarmupGlyph: 'W',
+  setInputStepperMinus: '−',
+  setInputStepperPlus: '+',
+
+  showcaseTopBarTitle: 'Showcase',
+  showcaseExerciseName: 'Incline Dumbbell Press',
+  showcaseTargetHeading: 'Target:',
+  showcaseTargetValue: '4 × 6-10',
+  showcaseSetsDoneLabel: 'Sets done',
+  showcaseTransportStartLabel: 'Start',
+  showcaseNextExerciseLabel: 'Next exercise',
+  showcaseFlashTriggerLabel: 'Fire flash burst',
+  showcaseFastForwardLabel: 'Run clock 59:50 → 60:10',
+  showcaseListRowNavLabel: 'Programmes',
+  showcaseListRowToggleLabel: 'Screen flash',
+  showcaseListRowValueLabel: 'Flash interval',
+  showcaseListRowValueValue: '30s',
+  showcaseSetInputConfirmedLabel: 'Set 1',
+  showcaseSetInputGhostLabel: 'Set 2',
 } as const;

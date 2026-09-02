@@ -1,26 +1,7 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Redirect } from 'expo-router';
 
-import { strings } from '@/strings';
-import { theme } from '@/theme';
-
-export default function Placeholder() {
-  return (
-    <View style={styles.root}>
-      <Text style={styles.label}>{strings.appPlaceholder}</Text>
-    </View>
-  );
+// R1: opens straight into the throwaway showcase for the verification gate.
+// R2 replaces this with the real Home screen.
+export default function Index() {
+  return <Redirect href="/showcase" />;
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.color.bg,
-  },
-  label: {
-    color: theme.color.textPrimary,
-    fontSize: 32,
-    fontWeight: 'bold',
-  },
-});
