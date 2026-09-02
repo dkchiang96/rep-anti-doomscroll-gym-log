@@ -248,10 +248,14 @@ const styles = StyleSheet.create({
     color: color.slabSecondary,
   },
   searchInput: {
-    ...type.display1,
+    // §3's type rule: Inter is for free-text the user typed, not the Bebas
+    // Neue display scale — a 64pt display-1 numeral font here overflowed the
+    // input's height entirely and got clipped off-screen.
+    ...type.body,
     color: color.textPrimary,
     paddingHorizontal: size.listRowPadding,
     minHeight: size.minTouchTarget,
+    textAlignVertical: 'center',
   },
   chipRow: {
     flexDirection: 'row',

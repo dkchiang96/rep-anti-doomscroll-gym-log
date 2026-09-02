@@ -211,7 +211,10 @@ function LiveSessionScreen({
     }
   }, [exerciseKey]);
 
-  const exerciseName = (exercise?.name ?? strings.homeFreestyleLabel).toUpperCase();
+  // Distinct from the top bar's session-level title (which legitimately
+  // reads FREESTYLE for a templateless session) — reusing the same word here
+  // for "no exercise picked yet" read as a duplicated/broken label.
+  const exerciseName = (exercise?.name ?? strings.sessionNoExerciseLabel).toUpperCase();
 
   return (
     // FlashOverlay is a sibling of this outer, edge-to-edge View (not nested
@@ -242,7 +245,11 @@ function LiveSessionScreen({
               </Text>
             </>
           ) : (
-            <Text style={[type.label, styles.onSlabText]}>{strings.homeFreestyleLabel.toUpperCase()}</Text>
+            // "No target" covers both a true freestyle session and an
+            // ad-hoc exercise added mid-session that isn't part of today's
+            // template — "FREESTYLE" here would misdescribe the latter, and
+            // duplicated the top bar's title in the former.
+            <Text style={[type.label, styles.onSlabText]}>{strings.sessionNoTargetLabel.toUpperCase()}</Text>
           )}
         </Slab>
 

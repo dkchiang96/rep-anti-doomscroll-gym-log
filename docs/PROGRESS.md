@@ -463,3 +463,17 @@ User tested on a real device and reported two things: the +/- steppers on the tr
 **Verification:** `npm run typecheck`, `npm run test` (32 suites, 147 tests, unchanged), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning) all pass. `npx expo export --platform android` bundles cleanly. The actual "numbers are now legible and the row count matches SETS DONE" checks need the user's device, per every prior session's standing caveat.
 
 **Commit:** `fix(ui): set-input row layout and sets-done row count`
+
+## 2026-09-02 — R5 follow-up 2: search input font, duplicate FREESTYLE text
+
+User reported two more issues on device: the exercise picker's search field was "too big that it's cropped out of the screen," and the live workout screen showed "Freestyle" twice (top bar and the yellow exercise-name slab).
+
+**Root cause of the search field:** `ExercisePicker.tsx`'s `searchInput` style spread `type.display1` — the 64pt Bebas Neue numeral scale — onto a plain text `TextInput` with `minHeight: 56`. A 64pt line doesn't fit a 56dp-tall input; it overflowed the box and got clipped off-screen instead of wrapping or shrinking. Per DESIGN-SPEC.md §3's own type rule ("Body/Inter — only for free-text the user typed"), a search query is exactly the case Inter body text is for, not the Bebas Neue display scale. Fixed by switching to `type.body`.
+
+**Root cause of the duplicate FREESTYLE:** for a templateless (freestyle) session with no exercise picked yet, the top bar's session-title fallback and the yellow slab's exercise-name fallback both resolved to `strings.homeFreestyleLabel` ("Freestyle") — same word, two zones, read as a broken duplicate rather than two different pieces of information that happened to collide. The lime slab's no-target fallback used the same string too, so a fresh freestyle session actually showed it three times, not two.
+
+**Fix:** `src/app/session.tsx` — the yellow slab's exercise-name fallback is now `strings.sessionNoExerciseLabel` ("Select an exercise"), distinct from the top bar's legitimate "Freestyle" session-type label. The lime slab's no-target fallback is now `strings.sessionNoTargetLabel` ("No target") — also more accurate than "Freestyle" for the R5-added case of an ad-hoc exercise picked mid-session that isn't part of today's template (that session isn't freestyle at all, it just has one untemplated exercise in it).
+
+**Verification:** `npm run typecheck`, `npm run test` (147 tests, unchanged), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning) all pass. Needs the user's device to confirm the search field is now legible and the live screen shows each zone's own text.
+
+**Commit:** `fix(ui): search input font size and duplicate freestyle text`

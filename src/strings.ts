@@ -33,6 +33,8 @@ export const strings = {
   sessionLoggingPlaceholder: 'Set logging is coming next.',
 
   sessionTargetHeading: 'Target:',
+  sessionNoExerciseLabel: 'Select an exercise',
+  sessionNoTargetLabel: 'No target',
   sessionSetsDoneLabel: 'Sets done',
   sessionTransportStartLabel: 'Start',
   sessionTransportPauseLabel: 'Pause',
