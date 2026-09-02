@@ -15,6 +15,12 @@ export const strings = {
   homeRowSettings: 'Settings',
 
   settingsTitle: 'Settings',
+  settingsFlashIntervalLabel: 'Flash interval',
+  settingsFlashIntervalValue: (seconds: number) => `${seconds}s`,
+  settingsFlashColourLabel: 'Flash colour',
+  settingsFlashColourYellow: 'Yellow',
+  settingsFlashColourLime: 'Lime',
+  settingsPlateInventoryHeading: 'Plate inventory',
   settingsRowImport: 'Import Google Keep history',
   settingsRowExport: 'Export data',
   settingsRowArchive: 'Archive',

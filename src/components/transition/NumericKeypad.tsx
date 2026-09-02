@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useInstrumentationStore } from '@/state/instrumentationStore';
 import { strings } from '@/strings';
 import { color, size, tabularNums, type } from '@/theme';
 
@@ -21,8 +22,10 @@ type NumericKeypadProps = {
 
 export function NumericKeypad({ visible, label, allowDecimal, onConfirm, onCancel }: NumericKeypadProps) {
   const [buffer, setBuffer] = useState('');
+  const recordTap = useInstrumentationStore((s) => s.recordTap);
 
   function handleKey(key: string) {
+    recordTap();
     if (key === '⌫') {
       setBuffer((b) => b.slice(0, -1));
       return;

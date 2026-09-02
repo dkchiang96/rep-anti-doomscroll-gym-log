@@ -50,6 +50,12 @@ function AppShell({ appInit }: { appInit: AppInit | null }) {
               pushed screen with its own header — same treatment as session. */}
           <Stack.Screen name="transition" />
           <Stack.Screen name="settings" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="programmes" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="import-programme" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="import" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="archive" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="export" options={secondaryScreenHeaderOptions} />
+          <Stack.Screen name="debug" options={secondaryScreenHeaderOptions} />
         </Stack>
       </DatabaseProvider>
     </ThemeProvider>

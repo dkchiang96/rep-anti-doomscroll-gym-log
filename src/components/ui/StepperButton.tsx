@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
+import { useInstrumentationStore } from '@/state/instrumentationStore';
 import { color, type } from '@/theme';
 
 // Shared square stepper glyph button — DESIGN-SPEC.md §5.7's set-row steppers
@@ -29,6 +30,12 @@ export function StepperButton({ label, onPress, size, disabled = false }: Steppe
   const repeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const accelerateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRepeating = useRef(false);
+  const recordTap = useInstrumentationStore((s) => s.recordTap);
+
+  const firePress = useCallback(() => {
+    recordTap();
+    onPress();
+  }, [onPress, recordTap]);
 
   const clearTimers = useCallback(() => {
     if (holdTimeout.current) clearTimeout(holdTimeout.current);
@@ -45,13 +52,13 @@ export function StepperButton({ label, onPress, size, disabled = false }: Steppe
     clearTimers();
     holdTimeout.current = setTimeout(() => {
       isRepeating.current = true;
-      repeatInterval.current = setInterval(onPress, SLOW_INTERVAL_MS);
+      repeatInterval.current = setInterval(firePress, SLOW_INTERVAL_MS);
       accelerateTimeout.current = setTimeout(() => {
         if (repeatInterval.current) clearInterval(repeatInterval.current);
-        repeatInterval.current = setInterval(onPress, FAST_INTERVAL_MS);
+        repeatInterval.current = setInterval(firePress, FAST_INTERVAL_MS);
       }, ACCELERATE_AFTER_MS);
     }, HOLD_DELAY_MS);
-  }, [clearTimers, disabled, onPress]);
+  }, [clearTimers, disabled, firePress]);
 
   const handlePressOut = useCallback(() => {
     clearTimers();
@@ -59,9 +66,9 @@ export function StepperButton({ label, onPress, size, disabled = false }: Steppe
 
   const handlePress = useCallback(() => {
     if (disabled) return;
-    if (!isRepeating.current) onPress();
+    if (!isRepeating.current) firePress();
     isRepeating.current = false;
-  }, [disabled, onPress]);
+  }, [disabled, firePress]);
 
   return (
     <Pressable

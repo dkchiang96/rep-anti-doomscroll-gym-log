@@ -1,5 +1,5 @@
 import { useKeepAwake } from 'expo-keep-awake';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +20,7 @@ import type { session as sessionTable } from '@/data/schema';
 import type { EquipmentType, LoadConvention } from '@/domain/loadConvention';
 import { didCrossInterval } from '@/domain/stopwatch';
 import { useAttachStopwatch, useStopwatch } from '@/state/stopwatchStore';
+import { useFlashPreferenceStore } from '@/state/flashPreferenceStore';
 import { strings } from '@/strings';
 import { color, liveZoneFlex, size, tabularNums, type } from '@/theme';
 
@@ -38,9 +39,10 @@ type CurrentExercise = {
   equipmentType: EquipmentType;
   loadConvention: LoadConvention;
   barWeightKg: number | null;
-  targetSets: number;
-  targetRepsMin: number;
-  targetRepsMax: number;
+  // Null when the exercise was picked mid-session (R5's exercise picker) and
+  // isn't part of the active template — the lime slab falls back to the
+  // FREESTYLE label in that case, same as a templateless session.
+  target: { sets: number; repsMin: number; repsMax: number } | null;
 } | null;
 
 type LoadState =
@@ -54,6 +56,9 @@ export default function LiveSession() {
   useKeepAwake();
   const { db, userId } = useDatabase();
   const router = useRouter();
+  const params = useLocalSearchParams<{ sessionExerciseId?: string; exerciseId?: string }>();
+  const pickedSessionExerciseId = typeof params.sessionExerciseId === 'string' ? params.sessionExerciseId : null;
+  const pickedExerciseId = typeof params.exerciseId === 'string' ? params.exerciseId : null;
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
@@ -69,12 +74,36 @@ export default function LiveSession() {
       const flashIntervalMs = (user?.restFlashIntervalSeconds ?? 30) * 1000 || DEFAULT_FLASH_INTERVAL_MS;
 
       let title: string = strings.sessionPlaceholderFreestyleTitle;
-      let exercise: CurrentExercise = null;
+      let templateExercises: Awaited<ReturnType<typeof listTemplateExercisesByTemplate>> = [];
       if (active.templateId) {
         const template = await getTemplateById(db, userId, active.templateId);
         if (template) title = template.name;
+        templateExercises = await listTemplateExercisesByTemplate(db, userId, active.templateId);
+      }
 
-        const templateExercises = await listTemplateExercisesByTemplate(db, userId, active.templateId);
+      let exercise: CurrentExercise = null;
+
+      if (pickedSessionExerciseId && pickedExerciseId) {
+        // R5: the exercise picker (from the transition screen) already
+        // created/found the session_exercise row before navigating here —
+        // just load its exercise and, if it happens to be part of today's
+        // template, its target.
+        const ex = await getExerciseById(db, userId, pickedExerciseId);
+        if (ex) {
+          const templateExercise = templateExercises.find((te) => te.exerciseId === ex.id) ?? null;
+          exercise = {
+            id: ex.id,
+            sessionExerciseId: pickedSessionExerciseId,
+            name: ex.name,
+            equipmentType: ex.equipmentType,
+            loadConvention: ex.loadConvention,
+            barWeightKg: ex.barWeightKg,
+            target: templateExercise
+              ? { sets: templateExercise.targetSets, repsMin: templateExercise.targetRepsMin, repsMax: templateExercise.targetRepsMax }
+              : null,
+          };
+        }
+      } else if (active.templateId) {
         const first = [...templateExercises].sort((a, b) => a.orderIndex - b.orderIndex)[0];
         if (first) {
           const ex = await getExerciseById(db, userId, first.exerciseId);
@@ -100,9 +129,7 @@ export default function LiveSession() {
                 equipmentType: ex.equipmentType,
                 loadConvention: ex.loadConvention,
                 barWeightKg: ex.barWeightKg,
-                targetSets: first.targetSets,
-                targetRepsMin: first.targetRepsMin,
-                targetRepsMax: first.targetRepsMax,
+                target: { sets: first.targetSets, repsMin: first.targetRepsMin, repsMax: first.targetRepsMax },
               };
             }
           }
@@ -114,7 +141,7 @@ export default function LiveSession() {
     return () => {
       cancelled = true;
     };
-  }, [db, userId]);
+  }, [db, userId, pickedSessionExerciseId, pickedExerciseId]);
 
   if (state.status === 'none') {
     router.replace('/');
@@ -154,6 +181,7 @@ function LiveSessionScreen({
   const { session, title, exercise, flashIntervalMs } = state;
   useAttachStopwatch(db, userId, session);
   const stopwatch = useStopwatch();
+  const flashTone = useFlashPreferenceStore((s) => s.tone);
   const flashRef = useRef<FlashOverlayHandle>(null);
   const previousElapsedRef = useRef(stopwatch.elapsedMs);
 
@@ -202,11 +230,11 @@ function LiveSessionScreen({
         </Slab>
 
         <Slab tone="secondary" flex={liveZoneFlex.lime}>
-          {exercise ? (
+          {exercise?.target ? (
             <>
               <Text style={[type.label, styles.onSlabText]}>{strings.sessionTargetHeading}</Text>
               <Text style={[type.display1, styles.onSlabText]}>
-                {strings.targetSetsRepsLabel(exercise.targetSets, exercise.targetRepsMin, exercise.targetRepsMax)}
+                {strings.targetSetsRepsLabel(exercise.target.sets, exercise.target.repsMin, exercise.target.repsMax)}
               </Text>
             </>
           ) : (
@@ -242,7 +270,7 @@ function LiveSessionScreen({
         </Pressable>
       </SafeAreaView>
 
-      <FlashOverlay ref={flashRef} />
+      <FlashOverlay ref={flashRef} tone={flashTone} />
     </View>
   );
 }

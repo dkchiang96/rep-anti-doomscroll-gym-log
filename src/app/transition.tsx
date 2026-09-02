@@ -8,9 +8,14 @@ import { Clock, FlashOverlay, SetInputRow, Slab, TransportButton } from '@/compo
 import type { FlashOverlayHandle } from '@/components/ui';
 import { NumericKeypad } from '@/components/transition/NumericKeypad';
 import { PlateCalculator } from '@/components/transition/PlateCalculator';
+import { ExercisePicker } from '@/components/exercise/ExercisePicker';
 import { useDatabase } from '@/data/DatabaseProvider';
-import { getExerciseById } from '@/data/repositories/exerciseRepository';
-import { getMostRecentSessionExerciseForExercise } from '@/data/repositories/sessionExerciseRepository';
+import { getExerciseById, recordExerciseUsage } from '@/data/repositories/exerciseRepository';
+import {
+  createSessionExercise,
+  getMostRecentSessionExerciseForExercise,
+  listSessionExercisesBySession,
+} from '@/data/repositories/sessionExerciseRepository';
 import { getActiveSession } from '@/data/repositories/sessionRepository';
 import { seedDefaultPlateInventoryIfEmpty } from '@/data/repositories/plateInventoryRepository';
 import {
@@ -30,6 +35,8 @@ import { orderRowsForDisplay } from '@/domain/setRowOrdering';
 import { didCrossInterval } from '@/domain/stopwatch';
 import { inferWeightStep } from '@/domain/weightStep';
 import { useAttachStopwatch, useStopwatch } from '@/state/stopwatchStore';
+import { useFlashPreferenceStore } from '@/state/flashPreferenceStore';
+import { useInstrumentationStore } from '@/state/instrumentationStore';
 import { strings } from '@/strings';
 import { color, size, type } from '@/theme';
 
@@ -151,6 +158,10 @@ function TransitionScreen({
   const [loaded, setLoaded] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<{ rowIndex: number; field: 'weight' | 'reps' } | null>(null);
   const [calculatorRowIndex, setCalculatorRowIndex] = useState<number | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const flashTone = useFlashPreferenceStore((s) => s.tone);
+  const recordSetCompletion = useInstrumentationStore((s) => s.recordSetCompletion);
+  const router = useRouter();
 
   useEffect(() => {
     // Nothing to load without a current exercise — the render below checks
@@ -239,7 +250,10 @@ function TransitionScreen({
       restAfterSeconds: null,
       completedAt: new Date(),
     });
-    if (created) setCommittedSets((prev) => [...prev, created]);
+    if (created) {
+      setCommittedSets((prev) => [...prev, created]);
+      recordSetCompletion(exercise?.name ?? '', created.index);
+    }
     return created;
   }
 
@@ -321,6 +335,23 @@ function TransitionScreen({
     const parent = committedSets[row.rowIndex];
     if (!parent) return;
     void commitNewSet({ weightKg: parent.weightKg, reps: parent.reps, setType: 'dropset', parentSetId: parent.id });
+  }
+
+  async function handlePickNextExercise(picked: Exercise) {
+    setPickerOpen(false);
+    const existing = await listSessionExercisesBySession(db, userId, session.id);
+    let se = existing.find((s) => s.exerciseId === picked.id) ?? null;
+    if (!se) {
+      se = await createSessionExercise(db, {
+        userId,
+        sessionId: session.id,
+        exerciseId: picked.id,
+        orderIndex: existing.length,
+      });
+    }
+    if (!se) return;
+    void recordExerciseUsage(db, userId, picked.id);
+    router.replace({ pathname: '/session', params: { sessionExerciseId: se.id, exerciseId: picked.id } });
   }
 
   // Removal is scoped to the most-recently-committed set (undo-last) — an
@@ -437,19 +468,22 @@ function TransitionScreen({
           </ScrollView>
         )}
 
-        {/* SELECT NEXT EXERCISE opens the real exercise picker in R5 — until
-            then this is a disabled slab (present, never hidden, same
-            treatment R2 used for other not-yet-built destinations). Design
-            law bans opacity-based tinting, so there's no legal way to paint
-            it visually "disabled"; it just doesn't respond to touch. */}
-        <View pointerEvents="none">
+        <Pressable style={styles.nextExerciseTouch} onPress={() => setPickerOpen(true)}>
           <Slab tone="primary" height={size.bottomSlab}>
             <Text style={[type.label, styles.onSlabText]}>{strings.transitionSelectNextExerciseLabel}</Text>
           </Slab>
-        </View>
+        </Pressable>
       </SafeAreaView>
 
-      <FlashOverlay ref={flashRef} />
+      <FlashOverlay ref={flashRef} tone={flashTone} />
+
+      <ExercisePicker
+        visible={pickerOpen}
+        db={db}
+        userId={userId}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(picked) => void handlePickNextExercise(picked)}
+      />
 
       <NumericKeypad
         visible={keypadTarget != null}
@@ -526,5 +560,8 @@ const styles = StyleSheet.create({
   },
   addSetLabel: {
     color: color.slabSecondary,
+  },
+  nextExerciseTouch: {
+    width: '100%',
   },
 });

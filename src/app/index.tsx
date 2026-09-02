@@ -98,7 +98,7 @@ export default function Home() {
 
       <View style={styles.gap} />
 
-      <ListRow variant="navigation" label={strings.homeRowProgrammes} disabled onPress={() => {}} />
+      <ListRow variant="navigation" label={strings.homeRowProgrammes} onPress={() => router.push('/programmes')} />
       <ListRow variant="navigation" label={strings.homeRowProgress} disabled onPress={() => {}} />
       <ListRow variant="navigation" label={strings.homeRowHistory} disabled onPress={() => {}} />
       <ListRow variant="navigation" label={strings.homeRowSettings} onPress={() => router.push('/settings')} />
