@@ -344,3 +344,25 @@ Second session of the UI rebuild. Bebas Neue + Inter loaded via `expo-font`, `th
 **Exit check:** `npm run typecheck`, `npm run test` (31 suites, 137 tests, up from 133), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning, untouched) all pass. Verification gate passed on-device per the user's screenshots and live confirmation.
 
 **Commit:** `feat(ui): design system and showcase`
+
+## 2026-09-02 — R2: navigation shell and home
+
+Third session of the UI rebuild. Real Home screen, a `settings.tsx` stub, and a back-to-Home header on every secondary screen — the last one being the exact bug (stranded on Import) called out in the Session 9 follow-up, now structurally prevented rather than patched screen-by-screen.
+
+**What shipped:**
+- `src/components/HomeHeaderButton.tsx` — recreated (deleted in R0). Per DESIGN-SPEC.md §8's known defect, this is a plain back chevron rendered with `react-native-svg` and theme tokens, not the old build's yellow "HOME" text. `router.canGoBack() ? router.back() : router.replace('/')`, 56dp hit target via `hitSlop`.
+- `src/app/_layout.tsx` — registers `index`, `session`, `settings` on the `Stack`; a shared `secondaryScreenHeaderOptions` (bar-coloured header, Bebas Neue title, `HomeHeaderButton` as `headerLeft`, no shadow) applies to `session` and `settings`. Home keeps `headerShown: false` — §5.6.1 starts directly with slabs, no title bar.
+- `src/app/index.tsx` — real Home screen. On mount, `getActiveSession` restores straight into `/session` (FR-1.2, before any template UI paints) if one is under 6 hours old. Otherwise: one `slab-primary` per template of the active programme (tap → `createSession` with that template/programme, then `/session`), or a single disabled `slab-primary` reading "CREATE A PROGRAMME" if no programme is active — Programmes isn't built until R5, so it's shown-not-hidden rather than live. A `slab-secondary` FREESTYLE slab is always present and enabled. Below a gap: `PROGRAMMES`/`PROGRESS`/`HISTORY` list rows (disabled, R5/R6) and `SETTINGS` (enabled, navigates to the new stub). Starting a session disables the slabs until the write completes, so a double-tap can't create two session rows.
+- `src/app/settings.tsx` — stub per the brief: four disabled `ListRow` navigation rows (Import, Export, Archive, Debug) for R5's destinations, present and never hidden.
+- `src/app/session.tsx` — **placeholder only**, explicitly not R3's real live screen. Self-contained (loads the active session itself via `getActiveSession`, redirects to `/` if none). Shows the template name (or "Freestyle") and the existing `Clock` component. No ticking: `elapsedMs` is a single reading taken once at load (`now - startedAt`, no accumulated-pause subtraction), since the pause-tracking this needs doesn't exist until R3's `stopwatch.ts`. For a freshly-started session this reads ~0, satisfying the exit check's "00:00, not running"; for a restored session it shows real elapsed time rather than a stale value.
+- `src/strings.ts` — added the new Home/Settings/session-placeholder string keys; reused `homeFreestyleLabel` and `sessionEndButton` where they already fit.
+
+**Deviations from the brief:**
+- **Added an END SESSION control to the placeholder**, not asked for in R2's Do list. Without it, starting a session during this session's own manual testing (or between now and R3) would strand the user on a screen with no way back, violating D9 directly. It calls the existing `endSession` repository function and returns Home.
+- **PROGRAMMES/PROGRESS/HISTORY rows on Home are disabled**, same "present, never hidden" treatment the brief specifies for `settings.tsx`'s rows — the brief doesn't say this explicitly for Home, but the reasoning (destinations don't exist until R5/R6) is identical, and hiding them would make Home's row count change twice more before this rebuild is done.
+- **Home's template/freestyle slabs use `size.bottomSlab` (80dp)**, reusing DESIGN-SPEC.md §5.5's "primary action" spec (`~80dp tall, black label, centred`) rather than inventing a new fixed height — §5.6.1 doesn't specify a slab height for Home, and this is the closest already-specified component that matches what's on screen.
+- Fixed one lint failure surfaced by `expo lint`'s new React Compiler purity rule: an initial `session.tsx` draft called `Date.now()` directly during render. Moved the elapsed-time calculation into the same effect that loads the session, so it's a single value computed once at load, not resolved during render.
+
+**Exit check:** `npm run typecheck`, `npm run test` (31 suites, 137 tests, unchanged — no new domain logic), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning) all pass. `npx expo export --platform android` bundles cleanly. On-device confirmation (empty-state Home, template Home once a programme exists, session-start landing on a paused placeholder clock, every screen returning to Home) is yours to run — no device/emulator in this environment, same standing caveat as every prior session.
+
+**Commit:** `feat(nav): shell and home screen`

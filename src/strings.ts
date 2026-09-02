@@ -8,6 +8,19 @@ export const strings = {
   homeImportLink: 'Import Google Keep history',
   homeFreestyleLabel: 'Freestyle',
   homeNoProgrammeHint: 'No active programme — go freestyle or import your history.',
+  homeCreateProgrammeSlab: 'Create a programme',
+  homeRowProgrammes: 'Programmes',
+  homeRowProgress: 'Progress',
+  homeRowHistory: 'History',
+  homeRowSettings: 'Settings',
+
+  settingsTitle: 'Settings',
+  settingsRowImport: 'Import Google Keep history',
+  settingsRowExport: 'Export data',
+  settingsRowArchive: 'Archive',
+  settingsRowDebug: 'Debug',
+
+  sessionPlaceholderFreestyleTitle: 'Freestyle',
 
   sessionElapsedLabel: 'Elapsed',
   sessionEndButton: 'End session',
