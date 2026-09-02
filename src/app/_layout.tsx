@@ -46,6 +46,9 @@ function AppShell({ appInit }: { appInit: AppInit | null }) {
           {/* No header here — DESIGN-SPEC.md §5.1/R3: the live screen owns its
               own top-bar zone and deliberately has no back button. */}
           <Stack.Screen name="session" />
+          {/* D10: the compact timer bar is persistent chrome, not a normal
+              pushed screen with its own header — same treatment as session. */}
+          <Stack.Screen name="transition" />
           <Stack.Screen name="settings" options={secondaryScreenHeaderOptions} />
         </Stack>
       </DatabaseProvider>

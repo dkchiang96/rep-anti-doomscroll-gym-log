@@ -9,12 +9,17 @@ import type { FlashOverlayHandle } from '@/components/ui';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { getExerciseById } from '@/data/repositories/exerciseRepository';
 import { getActiveSession } from '@/data/repositories/sessionRepository';
+import {
+  createSessionExercise,
+  listSessionExercisesBySession,
+} from '@/data/repositories/sessionExerciseRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
 import { getUser } from '@/data/repositories/userRepository';
 import type { session as sessionTable } from '@/data/schema';
+import type { EquipmentType, LoadConvention } from '@/domain/loadConvention';
 import { didCrossInterval } from '@/domain/stopwatch';
-import { useStopwatch } from '@/state/useStopwatch';
+import { useAttachStopwatch, useStopwatch } from '@/state/stopwatchStore';
 import { strings } from '@/strings';
 import { color, liveZoneFlex, size, tabularNums, type } from '@/theme';
 
@@ -22,14 +27,17 @@ import { color, liveZoneFlex, size, tabularNums, type } from '@/theme';
 // below and nothing else: no notes field, no set list, no scroll view, no
 // back button (D9 is intentionally suspended here — the Android system back
 // gesture still works; the in-app UI just never offers a way to leave a
-// running workout by accident). NEXT EXERCISE routes to /transition, which
-// doesn't exist until R4 — out of scope for this session per the brief.
+// running workout by accident).
 
 type Session = typeof sessionTable.$inferSelect;
 
 type CurrentExercise = {
   id: string;
+  sessionExerciseId: string;
   name: string;
+  equipmentType: EquipmentType;
+  loadConvention: LoadConvention;
+  barWeightKg: number | null;
   targetSets: number;
   targetRepsMin: number;
   targetRepsMax: number;
@@ -71,13 +79,32 @@ export default function LiveSession() {
         if (first) {
           const ex = await getExerciseById(db, userId, first.exerciseId);
           if (ex) {
-            exercise = {
-              id: first.id,
-              name: ex.name,
-              targetSets: first.targetSets,
-              targetRepsMin: first.targetRepsMin,
-              targetRepsMax: first.targetRepsMax,
-            };
+            // R4: sets attach to a session_exercise row, which nothing
+            // before this session ever created — get-or-create it here so
+            // the transition screen has somewhere to write to.
+            const existing = await listSessionExercisesBySession(db, userId, active.id);
+            let se = existing.find((s) => s.exerciseId === ex.id) ?? null;
+            if (!se) {
+              se = await createSessionExercise(db, {
+                userId,
+                sessionId: active.id,
+                exerciseId: ex.id,
+                orderIndex: existing.length,
+              });
+            }
+            if (se) {
+              exercise = {
+                id: ex.id,
+                sessionExerciseId: se.id,
+                name: ex.name,
+                equipmentType: ex.equipmentType,
+                loadConvention: ex.loadConvention,
+                barWeightKg: ex.barWeightKg,
+                targetSets: first.targetSets,
+                targetRepsMin: first.targetRepsMin,
+                targetRepsMax: first.targetRepsMax,
+              };
+            }
           }
         }
       }
@@ -97,11 +124,17 @@ export default function LiveSession() {
   if (state.status === 'loading') return null;
 
   const goToTransition = () => {
-    // /transition doesn't exist until R4 (out of scope for this session per
-    // the brief) — the cast is deliberate and should error once that route
-    // is added, as a reminder to drop it.
-    // @ts-expect-error — /transition is built in R4.
-    router.push('/transition');
+    // D10: the clock is persistent chrome, not a fresh screen — the shared
+    // stopwatchStore (attached below) is what keeps it continuous across
+    // this push, not anything passed here. Freestyle sessions (no current
+    // exercise yet — R5's picker is what assigns one) still navigate, so the
+    // slab is never a dead tap; the transition screen shows an empty state.
+    router.push({
+      pathname: '/transition',
+      params: state.exercise
+        ? { sessionExerciseId: state.exercise.sessionExerciseId, exerciseId: state.exercise.id }
+        : {},
+    });
   };
 
   return <LiveSessionScreen db={db} userId={userId} state={state} onNextExercise={goToTransition} />;
@@ -119,7 +152,8 @@ function LiveSessionScreen({
   onNextExercise: () => void;
 }) {
   const { session, title, exercise, flashIntervalMs } = state;
-  const stopwatch = useStopwatch(db, userId, session);
+  useAttachStopwatch(db, userId, session);
+  const stopwatch = useStopwatch();
   const flashRef = useRef<FlashOverlayHandle>(null);
   const previousElapsedRef = useRef(stopwatch.elapsedMs);
 

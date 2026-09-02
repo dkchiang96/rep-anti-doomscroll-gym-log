@@ -133,6 +133,8 @@ export default function Showcase() {
             reps={confirmedReps}
             confirmed
             warmup={warmup}
+            conventionLabel="PER SIDE"
+            totalLine={`${confirmedWeight * 2} kg total`}
             onToggleWarmup={() => setWarmup((w) => !w)}
             onWeightStep={(d) => setConfirmedWeight((w) => Math.max(0, w + d * 2.5))}
             onRepsStep={(d) => setConfirmedReps((r) => Math.max(0, r + d))}
@@ -142,6 +144,8 @@ export default function Showcase() {
             weightKg={ghostWeight}
             reps={ghostReps}
             confirmed={ghostConfirmed}
+            conventionLabel="PER SIDE"
+            totalLine={`${ghostWeight * 2} kg total`}
             onWeightStep={(d) => {
               setGhostConfirmed(true);
               setGhostWeight((w) => Math.max(0, w + d * 2.5));

@@ -32,6 +32,13 @@ export const strings = {
   sessionTransportPauseLabel: 'Pause',
   sessionNextExerciseLabel: 'Next exercise',
 
+  transitionConfirmAllButton: 'Confirm all',
+  transitionAddSetButton: '+ Add set',
+  transitionAddDropSetButton: '+ Drop set',
+  transitionRemoveSetButton: 'Remove',
+  transitionSelectNextExerciseLabel: 'Select next exercise',
+  transitionNoExerciseMessage: 'No exercise to log yet.',
+
   importTitle: 'Import Keep history',
   importPasteInstructions: 'Paste your Google Keep workout notes below.',
   importYearLabel: 'Year',
