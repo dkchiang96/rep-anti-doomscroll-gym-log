@@ -94,6 +94,9 @@ export function SetInputRow({
 
       <Text style={[type.caption, styles.groupCaption]}>{strings.setInputRepsHeading}</Text>
       <View style={styles.controlRow}>
+        {/* Matches the weight row's warm-up toggle width so the steppers
+            and numeral line up between the two rows. */}
+        <View style={styles.warmupSpacer} />
         <StepperButton
           label={strings.setInputStepperMinus}
           onPress={() => onRepsStep(-1)}
@@ -178,6 +181,9 @@ const styles = StyleSheet.create({
   warmupToggleOn: {
     backgroundColor: color.slabSecondary,
     borderColor: color.slabSecondary,
+  },
+  warmupSpacer: {
+    width: size.warmupToggle,
   },
   valueTouch: {
     flex: 1,

@@ -477,3 +477,15 @@ User reported two more issues on device: the exercise picker's search field was 
 **Verification:** `npm run typecheck`, `npm run test` (147 tests, unchanged), and `npm run lint` (0 errors, the same one pre-existing `plates.ts` warning) all pass. Needs the user's device to confirm the search field is now legible and the live screen shows each zone's own text.
 
 **Commit:** `fix(ui): search input font size and duplicate freestyle text`
+
+## 2026-09-02 — R5 follow-up 3: misaligned weight/reps steppers
+
+User didn't like that the KG and REPS +/- buttons weren't aligned between the two stacked rows introduced in the previous follow-up.
+
+**Root cause:** the weight row leads with the 56dp warm-up toggle before its minus stepper; the reps row has no equivalent leading element, so its stepper/numeral/stepper group sat 56dp+gap to the left of the weight row's.
+
+**Fix:** `src/components/ui/SetInputRow.tsx` — added an invisible `warmupSpacer` (same width as the warm-up toggle) as the first child of the reps row, so both rows' steppers and numerals line up vertically.
+
+**Verification:** `npm run typecheck`, `npm run test` (147 tests, unchanged), and `npm run lint` (0 errors, same pre-existing `plates.ts` warning) all pass.
+
+**Commit:** `fix(ui): align weight and reps stepper rows`
