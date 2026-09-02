@@ -311,3 +311,22 @@ Built the polish/export/field-test session: CSV and JSON export via the Android 
 **Exit check:** `npm run typecheck` and `npm run test` pass (139 tests, up from 127). `npx expo export --platform android` bundles cleanly with the three new dependencies (`expo-sharing`, `expo-battery`, `zustand`) and the two new routes. The brief's actual exit check — training a real session using only REP, and logging every issue found afterward without fixing mid-session — is the next thing to do, on-device.
 
 **Commit:** `feat: export, backup, release build`
+
+## 2026-09-02 — R0: strip and stabilise
+
+First session of the UI rebuild (`docs/REBUILD-SESSIONS.md`), on a new `rebuild-ui` branch. The old log-driven UI is gone; the data layer is untouched and every existing test still passes. Nothing renders except a placeholder screen showing `REP`.
+
+**What shipped:**
+- Deleted per the brief: all nine screens under `src/app/` except `_layout.tsx` (`index`, `session`, `import`, `programmes`, `import-programme`, `progress`, `archive`, `export`, `debug`), `src/components/logging/` and `src/components/progress/` in full, `src/components/HomeHeaderButton.tsx`, `src/domain/restClock.ts` + its test, and `assets/sounds/rest-beep.wav`.
+- `src/app/_layout.tsx` reduced to a minimal `Stack` that gates on DB readiness (unchanged `initDatabase`/`DatabaseProvider` wiring) and renders no registered screens beyond the router's own file-based route.
+- `src/app/index.tsx` rewritten as the placeholder: centred `REP` text, sourced from a new `strings.appPlaceholder` entry (invariant 9 — no literal user-facing strings in components) rather than hardcoded.
+- **Fixed the session-backup crash.** Root cause: `expo-sqlite`'s `defaultDatabaseDirectory` returns a bare filesystem path with no `file:` scheme, but the legacy `expo-file-system` native module's `copyAsync` throws `"Unsupported scheme for location"` (surfaces as `Call to function 'ExponentFileSystem.copyAsync' has been rejected`) for any path that isn't a `file:` URI — confirmed by reading the native Android source (`FileSystemLegacyModule.kt`'s `slashifyFilePath`/`copyAsync`). Added `toFileUri()` in `src/data/backup.ts` to prefix the DB path before it's passed to `copyAsync`; added unit tests for it. The existing try/catch around the call site (in the now-deleted `session.tsx`) is R3's responsibility to restore when that screen is rebuilt — noting it here so it isn't dropped.
+- **Fixed `npm run lint`.** `eslint` and `eslint-config-expo` were never declared dependencies (flagged as a gap in Sessions 4 and 5); added both as devDependencies. Lint now runs and passes (0 errors; one pre-existing warning in `src/domain/plates.ts`, left untouched per the brief's "don't touch `src/domain/`" rule).
+- Removed `expo-audio`, `expo-camera`, `expo-haptics` from `package.json` (grepped first — confirmed unused outside the deleted `components/logging/` tree) and their corresponding plugin entries from `app.json` (the `expo-camera` config plugin block and the bare `expo-audio` entry). `expo-keep-awake` kept, as instructed.
+- Left the rest-cue columns (`user.rest_flash_interval_seconds`, `rest_sound_enabled`, `rest_vibration_enabled`, `rest_camera_flash_enabled`) and `exercise.target_rest_seconds` in the schema, untouched — deliberately dead, not a migration.
+
+**Deviations from the brief:** none. Scope stayed inside R0's file list; `src/domain/` and `src/data/` untouched beyond the one named deletion (`restClock.ts` + its test) and the backup-crash fix, which is `src/data/backup.ts` itself — the file the brief names directly as needing the fix.
+
+**Exit check:** `npm run typecheck`, `npm run test` (30 suites, 133 tests, all passing — two new for `toFileUri`), and `npm run lint` all pass. `npx expo export --platform android` bundles cleanly (1415 modules). Real-device launch confirming `REP` renders with no red screen and no backup-error toast is still open — no device in this environment, same standing caveat as every prior session.
+
+**Commit:** `chore: strip UI layer, fix backup and lint`

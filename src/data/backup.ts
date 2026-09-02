@@ -22,13 +22,21 @@ function backupFilename(now: Date): string {
   return `rep-${now.toISOString().replace(/[:.]/g, '-')}.db`;
 }
 
+// expo-sqlite's defaultDatabaseDirectory is a bare filesystem path (no
+// `file://` scheme), but the legacy expo-file-system native module requires
+// a `file:` URI for every location it touches — a schemeless path throws
+// "Unsupported scheme for location" from copyAsync.
+export function toFileUri(path: string): string {
+  return path.startsWith('file:') ? path : `file://${path}`;
+}
+
 export async function runBackupRetention(now: Date = new Date()): Promise<void> {
   const dirInfo = await FileSystem.getInfoAsync(BACKUP_DIR);
   if (!dirInfo.exists) {
     await FileSystem.makeDirectoryAsync(BACKUP_DIR, { intermediates: true });
   }
 
-  const dbPath = `${defaultDatabaseDirectory}/${DB_NAME}`;
+  const dbPath = toFileUri(`${defaultDatabaseDirectory}/${DB_NAME}`);
   await FileSystem.copyAsync({ from: dbPath, to: `${BACKUP_DIR}${backupFilename(now)}` });
 
   const existing = await FileSystem.readDirectoryAsync(BACKUP_DIR);

@@ -1,4 +1,6 @@
 export const strings = {
+  appPlaceholder: 'REP',
+
   defaultUserDisplayName: 'You',
   loading: 'Loading…',
   navHomeButton: 'Home',

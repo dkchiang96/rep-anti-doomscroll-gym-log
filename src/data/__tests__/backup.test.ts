@@ -1,4 +1,4 @@
-import { selectBackupsToDelete } from '../backup';
+import { selectBackupsToDelete, toFileUri } from '../backup';
 
 describe('selectBackupsToDelete', () => {
   it('keeps the 30 most recent (lexicographically greatest) filenames and returns the rest', () => {
@@ -18,5 +18,22 @@ describe('selectBackupsToDelete', () => {
   it('respects a custom max', () => {
     const filenames = ['a', 'b', 'c', 'd'];
     expect(selectBackupsToDelete(filenames, 2)).toEqual(['b', 'a']);
+  });
+});
+
+describe('toFileUri', () => {
+  it('prefixes a bare filesystem path with file://', () => {
+    // expo-sqlite's defaultDatabaseDirectory returns a schemeless path;
+    // the legacy expo-file-system native module rejects copyAsync with
+    // "Unsupported scheme for location" unless it is a file: URI.
+    expect(toFileUri('/data/user/0/host.exp.exponent/files/SQLite')).toBe(
+      'file:///data/user/0/host.exp.exponent/files/SQLite',
+    );
+  });
+
+  it('leaves an already-schemed URI untouched', () => {
+    expect(toFileUri('file:///data/user/0/host.exp.exponent/files/SQLite')).toBe(
+      'file:///data/user/0/host.exp.exponent/files/SQLite',
+    );
   });
 });

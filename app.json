@@ -35,13 +35,6 @@
         }
       ],
       "expo-sqlite",
-      "expo-audio",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Used only to pulse the flash as an optional rest-timer cue."
-        }
-      ],
       "expo-sharing"
     ],
     "experiments": {
