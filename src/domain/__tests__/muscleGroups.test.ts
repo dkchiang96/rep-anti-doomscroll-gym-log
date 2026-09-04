@@ -8,8 +8,18 @@ describe('resolveMuscleGroupChip', () => {
     }
   });
 
+  it('maps the four legacy per-leg-muscle names onto the combined Legs chip', () => {
+    expect(resolveMuscleGroupChip('Quads')).toBe('Legs');
+    expect(resolveMuscleGroupChip('hamstrings')).toBe('Legs');
+    expect(resolveMuscleGroupChip('Glutes')).toBe('Legs');
+    expect(resolveMuscleGroupChip('CALVES')).toBe('Legs');
+  });
+
+  it('resolves the importer\'s own "Legs" guess onto the same combined chip', () => {
+    expect(resolveMuscleGroupChip('Legs')).toBe('Legs');
+  });
+
   it('falls back to Other for legacy keyword-guessed groups from the importer', () => {
-    expect(resolveMuscleGroupChip('Legs')).toBe('Other');
     expect(resolveMuscleGroupChip('Arms')).toBe('Other');
     expect(resolveMuscleGroupChip('Cardio')).toBe('Other');
     expect(resolveMuscleGroupChip('Uncategorised')).toBe('Other');

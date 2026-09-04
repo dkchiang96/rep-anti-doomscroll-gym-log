@@ -30,7 +30,7 @@ const RAW_PROGRAMME = {
           },
           {
             name: 'Bulgarian Split Squat',
-            muscle_group: 'Quads',
+            muscle_group: 'Legs',
             load_convention: 'per_side',
             target_sets: 3,
             target_reps_min: 8,

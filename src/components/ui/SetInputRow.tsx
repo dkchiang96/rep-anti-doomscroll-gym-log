@@ -21,9 +21,13 @@ type SetInputRowProps = {
   indent?: boolean;
   conventionLabel: string;
   totalLine?: string | null;
+  /** Item 6: exercise uses the bodyweight convention — shows the BW toggle under W. */
+  bodyweightRelevant?: boolean;
   onWeightStep: (direction: 1 | -1) => void;
   onRepsStep: (direction: 1 | -1) => void;
   onToggleWarmup?: () => void;
+  /** Zeroes this row's weight (pure bodyweight, no added weight). Highlight is derived from weightKg === 0, not separate state. */
+  onSetBodyweight?: () => void;
   /** Tapping the numeral opens a full-width keypad (or the plate calculator) per §5.7. */
   onTapWeight?: () => void;
   onTapReps?: () => void;
@@ -41,15 +45,18 @@ export function SetInputRow({
   indent = false,
   conventionLabel,
   totalLine,
+  bodyweightRelevant = false,
   onWeightStep,
   onRepsStep,
   onToggleWarmup,
+  onSetBodyweight,
   onTapWeight,
   onTapReps,
   onAddDropSet,
   onRemove,
 }: SetInputRowProps) {
   const valueColor = confirmed ? color.textPrimary : color.textMuted;
+  const bodyweightOn = bodyweightRelevant && weightKg === 0;
 
   return (
     <View style={[styles.root, indent ? styles.indent : null, disabled ? styles.disabled : null]}>
@@ -64,15 +71,22 @@ export function SetInputRow({
           near-zero width and effectively invisible. */}
       <Text style={[type.caption, styles.groupCaption]}>{strings.setInputWeightHeading}</Text>
       <View style={styles.controlRow}>
-        <Pressable
-          onPress={onToggleWarmup}
-          disabled={!onToggleWarmup || disabled}
-          style={[styles.warmupToggle, warmup ? styles.warmupToggleOn : null]}
-        >
-          <Text style={[type.label, { color: warmup ? color.onSlab : color.textPrimary }]}>
-            {strings.setInputWarmupGlyph}
-          </Text>
-        </Pressable>
+        {/* Item: BW zeroes the weight field, so it sits on the weight row —
+            W (warm-up) moved to the reps row below, since it marks the whole
+            set rather than the weight specifically. */}
+        {bodyweightRelevant ? (
+          <Pressable
+            onPress={onSetBodyweight}
+            disabled={!onSetBodyweight || disabled}
+            style={[styles.warmupToggle, bodyweightOn ? styles.warmupToggleOn : null]}
+          >
+            <Text style={[type.caption, { color: bodyweightOn ? color.onSlab : color.textPrimary }]}>
+              {strings.setInputBodyweightGlyph}
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.warmupSpacer} />
+        )}
         <StepperButton
           label={strings.setInputStepperMinus}
           onPress={() => onWeightStep(-1)}
@@ -94,9 +108,15 @@ export function SetInputRow({
 
       <Text style={[type.caption, styles.groupCaption]}>{strings.setInputRepsHeading}</Text>
       <View style={styles.controlRow}>
-        {/* Matches the weight row's warm-up toggle width so the steppers
-            and numeral line up between the two rows. */}
-        <View style={styles.warmupSpacer} />
+        <Pressable
+          onPress={onToggleWarmup}
+          disabled={!onToggleWarmup || disabled}
+          style={[styles.warmupToggle, warmup ? styles.warmupToggleOn : null]}
+        >
+          <Text style={[type.label, { color: warmup ? color.onSlab : color.textPrimary }]}>
+            {strings.setInputWarmupGlyph}
+          </Text>
+        </Pressable>
         <StepperButton
           label={strings.setInputStepperMinus}
           onPress={() => onRepsStep(-1)}

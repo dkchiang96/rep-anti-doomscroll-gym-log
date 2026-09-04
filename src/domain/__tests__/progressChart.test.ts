@@ -1,4 +1,4 @@
-import { buildProgressPoints } from '../progressChart';
+import { buildProgressPoints, filterLastNDays } from '../progressChart';
 
 describe('buildProgressPoints', () => {
   it('excludes warm-up sets from the top-set calculation', () => {
@@ -57,5 +57,30 @@ describe('buildProgressPoints', () => {
       expect(ratio).toBeGreaterThan(0.5);
       expect(ratio).toBeLessThan(2);
     }
+  });
+});
+
+describe('filterLastNDays', () => {
+  const now = new Date('2026-09-03T12:00:00Z').getTime();
+
+  it('keeps entries within the last 30 days and drops older ones', () => {
+    const entries = [
+      { sessionId: 'old', startedAt: new Date('2026-07-01T12:00:00Z'), sets: [] },
+      { sessionId: 'recent', startedAt: new Date('2026-08-20T12:00:00Z'), sets: [] },
+      { sessionId: 'today', startedAt: new Date('2026-09-03T12:00:00Z'), sets: [] },
+    ];
+    const result = filterLastNDays(entries, now);
+    expect(result.map((e) => e.sessionId)).toEqual(['recent', 'today']);
+  });
+
+  it('excludes a future-dated entry beyond now', () => {
+    const entries = [{ sessionId: 'future', startedAt: new Date('2026-09-10T12:00:00Z'), sets: [] }];
+    expect(filterLastNDays(entries, now)).toEqual([]);
+  });
+
+  it('respects a custom day count', () => {
+    const entries = [{ sessionId: 'a', startedAt: new Date('2026-08-29T12:00:00Z'), sets: [] }];
+    expect(filterLastNDays(entries, now, 3)).toEqual([]);
+    expect(filterLastNDays(entries, now, 10)).toHaveLength(1);
   });
 });

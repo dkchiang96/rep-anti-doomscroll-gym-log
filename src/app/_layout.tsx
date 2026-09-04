@@ -49,6 +49,9 @@ function AppShell({ appInit }: { appInit: AppInit | null }) {
           {/* D10: the compact timer bar is persistent chrome, not a normal
               pushed screen with its own header — same treatment as session. */}
           <Stack.Screen name="transition" />
+          {/* No header — same "own its own chrome" treatment as session and
+              transition; the in-screen DONE button is the only way out. */}
+          <Stack.Screen name="session-summary" />
           <Stack.Screen name="settings" options={secondaryScreenHeaderOptions} />
           <Stack.Screen name="programmes" options={secondaryScreenHeaderOptions} />
           <Stack.Screen name="import-programme" options={secondaryScreenHeaderOptions} />

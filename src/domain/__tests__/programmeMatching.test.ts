@@ -37,7 +37,7 @@ const DATA: ProgrammeImportData = {
         },
         {
           name: 'Bulgarian Split Squat', // nothing close in the library
-          muscleGroup: 'Quads',
+          muscleGroup: 'Legs',
           loadConvention: 'per_side',
           targetSets: 3,
           targetRepsMin: 8,
@@ -95,7 +95,7 @@ describe('buildProgrammeMatchRows', () => {
   it('carries the sample exercise data for create-flow defaults', () => {
     const rows = buildProgrammeMatchRows(DATA, LIBRARY);
     const row = rows.find((r) => r.name === 'Bulgarian Split Squat')!;
-    expect(row.sample.muscleGroup).toBe('Quads');
+    expect(row.sample.muscleGroup).toBe('Legs');
     expect(row.sample.loadConvention).toBe('per_side');
   });
 });

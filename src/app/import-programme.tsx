@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   decisionTouch: {
-    minHeight: 44,
+    minHeight: size.minTouchTarget,
     paddingHorizontal: 12,
     justifyContent: 'center',
     borderWidth: 2,
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   remapResultRow: {
-    minHeight: 44,
+    minHeight: size.minTouchTarget,
     justifyContent: 'center',
   },
   remapResultLabel: {
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   chipTouch: {
-    minHeight: 44,
+    minHeight: size.minTouchTarget,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',

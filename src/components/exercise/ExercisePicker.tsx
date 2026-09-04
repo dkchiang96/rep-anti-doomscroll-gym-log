@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { createExercise, listExercises } from '@/data/repositories/exerciseRepository';
+import { createExercise, listExercises, softDeleteExercise, updateExercise } from '@/data/repositories/exerciseRepository';
 import type { exercise as exerciseTable } from '@/data/schema';
 import type { AppDatabase } from '@/data/types';
 import { matchExercises } from '@/domain/fuzzyMatch';
@@ -46,6 +46,8 @@ export function ExercisePicker({ visible, db, userId, onClose, onSelect }: Exerc
   const [creating, setCreating] = useState(false);
   const [createEquipment, setCreateEquipment] = useState<EquipmentType | null>(null);
   const [createConvention, setCreateConvention] = useState<LoadConvention | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -59,6 +61,8 @@ export function ExercisePicker({ visible, db, userId, onClose, onSelect }: Exerc
       setCreating(false);
       setCreateEquipment(null);
       setCreateConvention(null);
+      setEditingId(null);
+      setEditName('');
     })();
     return () => {
       cancelled = true;
@@ -86,6 +90,31 @@ export function ExercisePicker({ visible, db, userId, onClose, onSelect }: Exerc
 
   function handleSelect(exercise: Exercise) {
     onSelect(exercise);
+  }
+
+  function handleStartEdit(exercise: Exercise) {
+    setEditingId(exercise.id);
+    setEditName(exercise.name);
+  }
+
+  async function handleSaveEdit() {
+    const name = editName.trim();
+    if (!editingId || !name) return;
+    const updated = await updateExercise(db, userId, editingId, { name });
+    if (updated) {
+      setLibrary((prev) => prev.map((ex) => (ex.id === updated.id ? updated : ex)));
+    }
+    setEditingId(null);
+    setEditName('');
+  }
+
+  async function handleDelete(exercise: Exercise) {
+    await softDeleteExercise(db, userId, exercise.id);
+    setLibrary((prev) => prev.filter((ex) => ex.id !== exercise.id));
+    if (editingId === exercise.id) {
+      setEditingId(null);
+      setEditName('');
+    }
   }
 
   function handleStartCreate() {
@@ -149,12 +178,46 @@ export function ExercisePicker({ visible, db, userId, onClose, onSelect }: Exerc
         </View>
 
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-          {results.map((ex) => (
-            <Pressable key={ex.id} onPress={() => handleSelect(ex)} style={styles.resultRow}>
-              <Text style={[type.label, styles.resultLabel]}>{ex.name.toUpperCase()}</Text>
-              <View style={styles.divider} />
-            </Pressable>
-          ))}
+          {results.map((ex) =>
+            editingId === ex.id ? (
+              <View key={ex.id} style={styles.editRow}>
+                <TextInput
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder={strings.addExerciseRenamePlaceholder}
+                  placeholderTextColor={color.textMuted}
+                  autoFocus
+                  style={styles.editInput}
+                />
+                <View style={styles.editActions}>
+                  <Pressable onPress={() => void handleSaveEdit()} style={styles.editActionTouch}>
+                    <Text style={[type.caption, styles.editSaveLabel]}>{strings.addExerciseSaveButton}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setEditingId(null)} style={styles.editActionTouch}>
+                    <Text style={[type.caption, styles.editCancelLabel]}>{strings.addExerciseCancelButton}</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.divider} />
+              </View>
+            ) : (
+              <View key={ex.id} style={styles.resultRow}>
+                <Pressable onPress={() => handleSelect(ex)} style={styles.resultTouch}>
+                  <Text style={[type.label, styles.resultLabel]} numberOfLines={1}>
+                    {ex.name.toUpperCase()}
+                  </Text>
+                </Pressable>
+                <View style={styles.resultActions}>
+                  <Pressable onPress={() => handleStartEdit(ex)} style={styles.resultActionTouch}>
+                    <Text style={[type.caption, styles.resultActionLabel]}>{strings.addExerciseEditButton}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => void handleDelete(ex)} style={styles.resultActionTouch}>
+                    <Text style={[type.caption, styles.resultDeleteLabel]}>{strings.addExerciseDeleteButton}</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.divider} />
+              </View>
+            ),
+          )}
 
           {showCreateRow ? (
             !chip || chip === OTHER_MUSCLE_GROUP_CHIP ? (
@@ -292,12 +355,62 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     minHeight: size.listRow,
-    justifyContent: 'center',
     paddingHorizontal: size.listRowPadding,
+    gap: 8,
+  },
+  resultTouch: {
+    flex: 1,
+    minHeight: size.minTouchTarget,
+    justifyContent: 'center',
   },
   resultLabel: {
     color: color.textPrimary,
+  },
+  resultActions: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  resultActionTouch: {
+    minHeight: size.minTouchTarget,
+    minWidth: size.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultActionLabel: {
+    color: color.slabSecondary,
+  },
+  resultDeleteLabel: {
+    color: color.danger,
+  },
+  editRow: {
+    paddingHorizontal: size.listRowPadding,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  editInput: {
+    ...type.body,
+    color: color.textPrimary,
+    borderWidth: 2,
+    borderColor: color.divider,
+    minHeight: size.minTouchTarget,
+    paddingHorizontal: 12,
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  editActionTouch: {
+    minHeight: size.minTouchTarget,
+    justifyContent: 'center',
+  },
+  editSaveLabel: {
+    color: color.slabSecondary,
+  },
+  editCancelLabel: {
+    color: color.textMuted,
   },
   divider: {
     height: size.divider,

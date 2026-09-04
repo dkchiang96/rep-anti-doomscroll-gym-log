@@ -6,19 +6,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Clock, FlashOverlay, Slab, TransportButton, TransportResetButton } from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
+import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
 import { runBackupRetention } from '@/data/backup';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { getExerciseById } from '@/data/repositories/exerciseRepository';
+import { getSessionDetail } from '@/data/repositories/historyRepository';
+import { getProgrammeById } from '@/data/repositories/programmeRepository';
 import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
-import {
-  createSessionExercise,
-  listSessionExercisesBySession,
-} from '@/data/repositories/sessionExerciseRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
 import { getUser } from '@/data/repositories/userRepository';
 import type { session as sessionTable } from '@/data/schema';
 import type { EquipmentType, LoadConvention } from '@/domain/loadConvention';
+import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
 import { didCrossInterval } from '@/domain/stopwatch';
 import { useAttachStopwatch, useStopwatch } from '@/state/stopwatchStore';
 import { useFlashPreferenceStore } from '@/state/flashPreferenceStore';
@@ -31,13 +31,12 @@ import { color, liveZoneFlex, size, tabularNums, type } from '@/theme';
 // gesture still works; the in-app UI just never offers a way to leave a
 // running workout by accident).
 //
-// One addition beyond the five zones: long-pressing the top bar title arms a
-// tap-to-confirm "end session" state. R2's placeholder had an End Session
-// button specifically so a running session could never strand the user (D9);
-// R3's rewrite dropped it entirely when it moved to the strict five-zone
-// layout, leaving no way to close out a workout at all. The top bar is
-// otherwise dead space, so it doubles as the affordance rather than adding a
-// sixth zone.
+// Item 7 (this session's punch list): long-pressing the NEXT EXERCISE bottom
+// slab arms a tap-to-confirm "end session" state — the same control and
+// pattern transition.tsx's SELECT NEXT EXERCISE slab already used, so both
+// screens' exit route is now the same gesture in the same place instead of
+// two different ones (this screen previously used a top-bar long-press).
+// The top bar is plain, non-interactive chrome again.
 
 type Session = typeof sessionTable.$inferSelect;
 
@@ -88,6 +87,13 @@ export default function LiveSession() {
         const template = await getTemplateById(db, userId, active.templateId);
         if (template) title = template.name;
         templateExercises = await listTemplateExercisesByTemplate(db, userId, active.templateId);
+      } else if (active.programmeId) {
+        // Item 3: a freestyle session still tagged to the active programme
+        // (see index.tsx's startSession) shows the programme's name here
+        // instead of the generic "Freestyle" — a true templateless,
+        // programmeless session is the only case that still reads Freestyle.
+        const programme = await getProgrammeById(db, userId, active.programmeId);
+        if (programme) title = programme.name;
       }
 
       let exercise: CurrentExercise = null;
@@ -112,38 +118,13 @@ export default function LiveSession() {
               : null,
           };
         }
-      } else if (active.templateId) {
-        const first = [...templateExercises].sort((a, b) => a.orderIndex - b.orderIndex)[0];
-        if (first) {
-          const ex = await getExerciseById(db, userId, first.exerciseId);
-          if (ex) {
-            // R4: sets attach to a session_exercise row, which nothing
-            // before this session ever created — get-or-create it here so
-            // the transition screen has somewhere to write to.
-            const existing = await listSessionExercisesBySession(db, userId, active.id);
-            let se = existing.find((s) => s.exerciseId === ex.id) ?? null;
-            if (!se) {
-              se = await createSessionExercise(db, {
-                userId,
-                sessionId: active.id,
-                exerciseId: ex.id,
-                orderIndex: existing.length,
-              });
-            }
-            if (se) {
-              exercise = {
-                id: ex.id,
-                sessionExerciseId: se.id,
-                name: ex.name,
-                equipmentType: ex.equipmentType,
-                loadConvention: ex.loadConvention,
-                barWeightKg: ex.barWeightKg,
-                target: { sets: first.targetSets, repsMin: first.targetRepsMin, repsMax: first.targetRepsMax },
-              };
-            }
-          }
-        }
       }
+      // A templated session no longer jumps straight to the programme's
+      // first exercise — it opens on the same "Warm up" state a freestyle
+      // session does. The programme's first workout is reached the same way
+      // every subsequent one is: NEXT EXERCISE → the day picker
+      // (transition.tsx), which lists this template's exercises in the
+      // programme's own sequence.
 
       if (!cancelled) setState({ status: 'ready', session: active, title, exercise, flashIntervalMs });
     })();
@@ -199,14 +180,15 @@ function LiveSessionScreen({
   const flashRef = useRef<FlashOverlayHandle>(null);
   const previousElapsedRef = useRef(stopwatch.elapsedMs);
 
-  // No dedicated "end session" control was ever rebuilt after R3 replaced
-  // R2's placeholder with the strict five-zone screen — the top bar is
-  // otherwise unused space, so it doubles as the affordance. Long-press
-  // (matching RESET's pattern) arms a brief tap-to-confirm state rather than
-  // acting immediately, so an accidental long-press on the title can't end a
-  // running workout; it auto-disarms if untouched.
+  // Long-press (matching RESET's pattern) arms a brief tap-to-confirm state
+  // rather than acting immediately, so a stray long-press can't end a
+  // running workout; it auto-disarms if untouched. Confirming doesn't end
+  // the session immediately either — it opens a blocking recap of the whole
+  // workout so far first (ExitRecapModal, shared with transition.tsx).
   const [endArmed, setEndArmed] = useState(false);
   const disarmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recapOpen, setRecapOpen] = useState(false);
+  const [recapSections, setRecapSections] = useState<RecapSection[]>([]);
 
   useEffect(() => {
     return () => {
@@ -220,9 +202,25 @@ function LiveSessionScreen({
     disarmTimeoutRef.current = setTimeout(() => setEndArmed(false), 4000);
   }
 
-  async function handleTopBarPress() {
-    if (!endArmed) return;
-    if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+  async function handleNextExercisePress() {
+    if (endArmed) {
+      if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+      setEndArmed(false);
+      const detail = await getSessionDetail(db, userId, session.id);
+      setRecapSections(
+        detail.map((ex) => ({
+          name: ex.exerciseName,
+          shorthand: formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—',
+        })),
+      );
+      setRecapOpen(true);
+      return;
+    }
+    onNextExercise(setsDone);
+  }
+
+  async function handleRecapConfirm() {
+    setRecapOpen(false);
     await endSession(db, userId, session.id);
     // Backup failure must never block ending the session — same try/catch
     // the pre-rebuild build wrapped this call in.
@@ -231,7 +229,7 @@ function LiveSessionScreen({
     } catch {
       // intentionally swallowed
     }
-    router.replace('/');
+    router.replace({ pathname: '/session-summary', params: { sessionId: session.id } });
   }
 
   useEffect(() => {
@@ -270,16 +268,11 @@ function LiveSessionScreen({
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-        <Pressable
-          style={styles.topBar}
-          onPress={() => void handleTopBarPress()}
-          onLongPress={armEndConfirm}
-          delayLongPress={600}
-        >
-          <Text style={[type.heading, endArmed ? styles.topBarTitleArmed : styles.topBarTitle]} numberOfLines={1}>
-            {endArmed ? strings.sessionEndConfirmPrompt.toUpperCase() : title.toUpperCase()}
+        <View style={styles.topBar}>
+          <Text style={[type.heading, styles.topBarTitle]} numberOfLines={1}>
+            {title.toUpperCase()}
           </Text>
-        </Pressable>
+        </View>
 
         <Slab tone="primary" flex={liveZoneFlex.yellow}>
           <Text style={[type.display2, styles.onSlabText]}>{exerciseName}</Text>
@@ -324,14 +317,30 @@ function LiveSessionScreen({
           </View>
         </View>
 
-        <Pressable style={styles.nextExerciseTouch} onPress={() => onNextExercise(setsDone)}>
+        <Pressable
+          style={styles.nextExerciseTouch}
+          onPress={() => void handleNextExercisePress()}
+          onLongPress={armEndConfirm}
+          delayLongPress={600}
+        >
           <Slab tone="primary" height={size.bottomSlab}>
-            <Text style={[type.label, styles.onSlabText]}>{strings.sessionNextExerciseLabel}</Text>
+            <Text style={[type.label, endArmed ? styles.onSlabTextArmed : styles.onSlabText]}>
+              {endArmed ? strings.sessionEndConfirmPrompt.toUpperCase() : strings.sessionNextExerciseLabel}
+            </Text>
           </Slab>
         </Pressable>
       </SafeAreaView>
 
       <FlashOverlay ref={flashRef} tone={flashTone} />
+
+      <ExitRecapModal
+        visible={recapOpen}
+        title={strings.recapEndTitle}
+        sections={recapSections}
+        confirmLabel={strings.recapEndConfirmButton}
+        onConfirm={() => void handleRecapConfirm()}
+        onBack={() => setRecapOpen(false)}
+      />
     </View>
   );
 }
@@ -355,13 +364,14 @@ const styles = StyleSheet.create({
   topBarTitle: {
     color: color.textPrimary,
   },
-  // §2's danger token is reserved for destructive confirmations — this is
-  // the confirm-armed state of the end-session long-press, not a normal label.
-  topBarTitleArmed: {
-    color: color.danger,
-  },
   onSlabText: {
     color: color.onSlab,
+    textAlign: 'center',
+  },
+  // §2's danger token is reserved for destructive confirmations — this is
+  // the confirm-armed state of the end-session long-press on the bottom slab.
+  onSlabTextArmed: {
+    color: color.danger,
     textAlign: 'center',
   },
   canvas: {

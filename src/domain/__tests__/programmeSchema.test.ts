@@ -82,7 +82,7 @@ describe('validateProgrammeImport', () => {
 
   it('rejects an invalid muscle_group naming the exact field path', () => {
     const bad = structuredClone(VALID_JSON);
-    (bad.programme.templates[0].exercises[0] as any).muscle_group = 'Legs';
+    (bad.programme.templates[0].exercises[0] as any).muscle_group = 'Wings';
     const result = validateProgrammeImport(bad);
     expect(result.ok).toBe(false);
     if (result.ok) return;

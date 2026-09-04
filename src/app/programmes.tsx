@@ -8,8 +8,8 @@ import { NumericKeypad } from '@/components/transition/NumericKeypad';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { getExerciseById } from '@/data/repositories/exerciseRepository';
 import { newId } from '@/data/id';
-import { createProgramme, listProgrammes, setActiveProgramme } from '@/data/repositories/programmeRepository';
-import { createTemplate, listTemplates } from '@/data/repositories/templateRepository';
+import { createProgramme, listProgrammes, setActiveProgramme, updateProgramme } from '@/data/repositories/programmeRepository';
+import { createTemplate, listTemplates, updateTemplate } from '@/data/repositories/templateRepository';
 import {
   createTemplateExercise,
   listTemplateExercisesByTemplate,
@@ -49,6 +49,11 @@ export default function Programmes() {
   const [templatesByProgramme, setTemplatesByProgramme] = useState<Record<string, Template[]>>({});
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplateDayHint, setNewTemplateDayHint] = useState('');
+
+  const [editingProgrammeId, setEditingProgrammeId] = useState<string | null>(null);
+  const [editProgrammeName, setEditProgrammeName] = useState('');
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editTemplateName, setEditTemplateName] = useState('');
 
   const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
   const [exercisesByTemplate, setExercisesByTemplate] = useState<Record<string, TemplateExerciseRow[]>>({});
@@ -105,6 +110,40 @@ export default function Programmes() {
   async function handleSetActive(programmeId: string) {
     await setActiveProgramme(db, userId, programmeId);
     await reloadProgrammes();
+  }
+
+  function startEditProgrammeName(prog: Programme) {
+    setEditingProgrammeId(prog.id);
+    setEditProgrammeName(prog.name);
+  }
+
+  async function handleSaveProgrammeName() {
+    const name = editProgrammeName.trim();
+    if (!editingProgrammeId || !name) return;
+    await updateProgramme(db, userId, editingProgrammeId, { name });
+    setEditingProgrammeId(null);
+    setEditProgrammeName('');
+    await reloadProgrammes();
+  }
+
+  function startEditTemplateName(tmpl: Template) {
+    setEditingTemplateId(tmpl.id);
+    setEditTemplateName(tmpl.name);
+  }
+
+  async function handleSaveTemplateName(programmeId: string | null) {
+    const name = editTemplateName.trim();
+    if (!editingTemplateId || !name) return;
+    await updateTemplate(db, userId, editingTemplateId, { name });
+    setEditingTemplateId(null);
+    setEditTemplateName('');
+    if (programmeId) {
+      const all = await listTemplates(db, userId);
+      const forProgramme = all.filter((t) => t.programmeId === programmeId && !t.isArchived);
+      setTemplatesByProgramme((prev) => ({ ...prev, [programmeId]: forProgramme.sort((a, b) => a.orderIndex - b.orderIndex) }));
+    } else {
+      await reloadProgrammes();
+    }
   }
 
   async function toggleProgrammeExpanded(programmeId: string) {
@@ -215,11 +254,26 @@ export default function Programmes() {
         updateTemplateExercise(db, userId, next.id, { supersetGroupId: null }),
       ]);
     } else {
+      // Bug fix: previously this only ever wrote row+next's group, so an
+      // exercise already paired with its OTHER neighbour (e.g. row already
+      // grouped with the exercise above it, or next already grouped with the
+      // exercise after it) kept its old supersetGroupId on that stale
+      // partner — the badge stuck around on an exercise that was no longer
+      // really grouped with anyone. Explicitly clear those stale partners
+      // first so "this exercise + the one below it" is always a clean pair.
+      const updates: Promise<unknown>[] = [];
+      const prev = rows[idx - 1];
+      if (prev && row.supersetGroupId && prev.supersetGroupId === row.supersetGroupId) {
+        updates.push(updateTemplateExercise(db, userId, prev.id, { supersetGroupId: null }));
+      }
+      const afterNext = rows[idx + 2];
+      if (afterNext && next.supersetGroupId && afterNext.supersetGroupId === next.supersetGroupId) {
+        updates.push(updateTemplateExercise(db, userId, afterNext.id, { supersetGroupId: null }));
+      }
       const groupId = newId();
-      await Promise.all([
-        updateTemplateExercise(db, userId, row.id, { supersetGroupId: groupId }),
-        updateTemplateExercise(db, userId, next.id, { supersetGroupId: groupId }),
-      ]);
+      updates.push(updateTemplateExercise(db, userId, row.id, { supersetGroupId: groupId }));
+      updates.push(updateTemplateExercise(db, userId, next.id, { supersetGroupId: groupId }));
+      await Promise.all(updates);
     }
     await refreshTemplateExercises(templateId);
   }
@@ -268,6 +322,29 @@ export default function Programmes() {
           />
           {expandedProgrammeId === programme.id ? (
             <View style={styles.expandedPanel}>
+              {editingProgrammeId === programme.id ? (
+                <View style={styles.newRow}>
+                  <TextInput
+                    value={editProgrammeName}
+                    onChangeText={setEditProgrammeName}
+                    placeholder={strings.programmesNamePlaceholder}
+                    placeholderTextColor={color.textMuted}
+                    autoFocus
+                    style={styles.input}
+                  />
+                  <Pressable onPress={() => void handleSaveProgrammeName()} style={styles.secondaryTouch}>
+                    <Text style={[type.label, styles.secondaryLabel]}>{strings.addExerciseSaveButton}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setEditingProgrammeId(null)} style={styles.secondaryTouch}>
+                    <Text style={[type.label, styles.cancelLabel]}>{strings.addExerciseCancelButton}</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable onPress={() => startEditProgrammeName(programme)} style={styles.secondaryTouch}>
+                  <Text style={[type.label, styles.secondaryLabel]}>{strings.programmeRenameButton}</Text>
+                </Pressable>
+              )}
+
               {!programme.isActive ? (
                 <Pressable onPress={() => void handleSetActive(programme.id)} style={styles.secondaryTouch}>
                   <Text style={[type.label, styles.secondaryLabel]}>{strings.programmesSetActiveButton}</Text>
@@ -285,6 +362,12 @@ export default function Programmes() {
                   expanded={expandedTemplateId === tmpl.id}
                   exercises={exercisesByTemplate[tmpl.id] ?? []}
                   exerciseNames={exerciseNames}
+                  editing={editingTemplateId === tmpl.id}
+                  editName={editTemplateName}
+                  onEditNameChange={setEditTemplateName}
+                  onStartEdit={() => startEditTemplateName(tmpl)}
+                  onSaveEdit={() => void handleSaveTemplateName(programme.id)}
+                  onCancelEdit={() => setEditingTemplateId(null)}
                   onToggle={() => void toggleTemplateExpanded(tmpl.id)}
                   onAddExercise={() => setPickerOpenForTemplate(tmpl.id)}
                   onRemoveExercise={(row) => void handleRemoveExercise(tmpl.id, row)}
@@ -328,6 +411,12 @@ export default function Programmes() {
               expanded={expandedTemplateId === tmpl.id}
               exercises={exercisesByTemplate[tmpl.id] ?? []}
               exerciseNames={exerciseNames}
+              editing={editingTemplateId === tmpl.id}
+              editName={editTemplateName}
+              onEditNameChange={setEditTemplateName}
+              onStartEdit={() => startEditTemplateName(tmpl)}
+              onSaveEdit={() => void handleSaveTemplateName(null)}
+              onCancelEdit={() => setEditingTemplateId(null)}
               onToggle={() => void toggleTemplateExpanded(tmpl.id)}
               onAddExercise={() => setPickerOpenForTemplate(tmpl.id)}
               onRemoveExercise={(row) => void handleRemoveExercise(tmpl.id, row)}
@@ -374,6 +463,12 @@ function TemplateSection({
   expanded,
   exercises,
   exerciseNames,
+  editing,
+  editName,
+  onEditNameChange,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
   onToggle,
   onAddExercise,
   onRemoveExercise,
@@ -385,6 +480,12 @@ function TemplateSection({
   expanded: boolean;
   exercises: TemplateExerciseRow[];
   exerciseNames: Record<string, string>;
+  editing: boolean;
+  editName: string;
+  onEditNameChange: (value: string) => void;
+  onStartEdit: () => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
   onToggle: () => void;
   onAddExercise: () => void;
   onRemoveExercise: (row: TemplateExerciseRow) => void;
@@ -402,6 +503,29 @@ function TemplateSection({
       />
       {expanded ? (
         <View style={styles.expandedPanel}>
+          {editing ? (
+            <View style={styles.newRow}>
+              <TextInput
+                value={editName}
+                onChangeText={onEditNameChange}
+                placeholder={strings.programmeDetailNewTemplateNamePlaceholder}
+                placeholderTextColor={color.textMuted}
+                autoFocus
+                style={styles.input}
+              />
+              <Pressable onPress={onSaveEdit} style={styles.secondaryTouch}>
+                <Text style={[type.label, styles.secondaryLabel]}>{strings.addExerciseSaveButton}</Text>
+              </Pressable>
+              <Pressable onPress={onCancelEdit} style={styles.secondaryTouch}>
+                <Text style={[type.label, styles.cancelLabel]}>{strings.addExerciseCancelButton}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable onPress={onStartEdit} style={styles.secondaryTouch}>
+              <Text style={[type.label, styles.secondaryLabel]}>{strings.templateRenameButton}</Text>
+            </Pressable>
+          )}
+
           <Text style={[type.caption, styles.sectionHeading]}>{strings.templateDetailExercisesHeading}</Text>
           {exercises.length === 0 ? <Text style={[type.body, styles.emptyText]}>{strings.templateDetailEmpty}</Text> : null}
           {exercises.map((row, i) => {
@@ -523,6 +647,9 @@ const styles = StyleSheet.create({
   secondaryLabel: {
     color: color.slabSecondary,
   },
+  cancelLabel: {
+    color: color.textMuted,
+  },
   sectionHeading: {
     color: color.textMuted,
     marginTop: 12,
@@ -553,7 +680,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   targetTouch: {
-    minHeight: 44,
+    minHeight: size.minTouchTarget,
     alignItems: 'flex-start',
     justifyContent: 'center',
   },
@@ -569,8 +696,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   smallTouch: {
-    minHeight: 44,
-    minWidth: 44,
+    minHeight: size.minTouchTarget,
+    minWidth: size.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },

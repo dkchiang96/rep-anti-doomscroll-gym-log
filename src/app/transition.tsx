@@ -7,17 +7,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Clock, FlashOverlay, SetInputRow, Slab, TransportButton } from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
 import { NumericKeypad } from '@/components/transition/NumericKeypad';
-import { PlateCalculator } from '@/components/transition/PlateCalculator';
+import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
+import { DayExercisePicker, type DayExerciseItem } from '@/components/transition/DayExercisePicker';
 import { ExercisePicker } from '@/components/exercise/ExercisePicker';
+import { runBackupRetention } from '@/data/backup';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { getExerciseById, recordExerciseUsage } from '@/data/repositories/exerciseRepository';
+import { getSessionDetail } from '@/data/repositories/historyRepository';
 import {
   createSessionExercise,
   getMostRecentSessionExerciseForExercise,
   listSessionExercisesBySession,
 } from '@/data/repositories/sessionExerciseRepository';
-import { getActiveSession } from '@/data/repositories/sessionRepository';
-import { seedDefaultPlateInventoryIfEmpty } from '@/data/repositories/plateInventoryRepository';
+import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
+import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import {
   createSet,
   listHistoricalWeightsForExercise,
@@ -26,11 +29,11 @@ import {
   updateSet,
 } from '@/data/repositories/setRepository';
 import { getUser } from '@/data/repositories/userRepository';
-import type { exercise as exerciseTable, plateInventory as plateInventoryTable, session as sessionTable, setEntry as setEntryTable } from '@/data/schema';
+import type { exercise as exerciseTable, session as sessionTable, setEntry as setEntryTable } from '@/data/schema';
 import type { AppDatabase } from '@/data/types';
 import { buildGhostSets, type GhostSet, type SetType } from '@/domain/ghostPrefill';
 import { deriveLoadDisplay } from '@/domain/loadConvention';
-import type { PlateConvention } from '@/domain/plates';
+import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
 import { orderRowsForDisplay } from '@/domain/setRowOrdering';
 import { didCrossInterval } from '@/domain/stopwatch';
 import { inferWeightStep } from '@/domain/weightStep';
@@ -52,7 +55,6 @@ import { color, size, type } from '@/theme';
 type Session = typeof sessionTable.$inferSelect;
 type Exercise = typeof exerciseTable.$inferSelect;
 type CommittedSet = typeof setEntryTable.$inferSelect;
-type PlateInventoryRow = typeof plateInventoryTable.$inferSelect;
 
 type LoadState =
   | { status: 'loading' }
@@ -168,14 +170,38 @@ function TransitionScreen({
   const [committedSets, setCommittedSets] = useState<CommittedSet[]>([]);
   const [ghostSets, setGhostSets] = useState<GhostSet[]>([]);
   const [weightStep, setWeightStep] = useState(DEFAULT_WEIGHT_STEP_KG);
-  const [plateInventory, setPlateInventory] = useState<PlateInventoryRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<{ rowIndex: number; field: 'weight' | 'reps' } | null>(null);
-  const [calculatorRowIndex, setCalculatorRowIndex] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // A templated session offers today's programme day (in sequence, done
+  // exercises greyed out) before falling back to the full library — the
+  // full ExercisePicker (pickerOpen above) stays reachable as the explicit
+  // "substitute" route via the day picker's footer button.
+  const [dayPickerOpen, setDayPickerOpen] = useState(false);
+  const [dayItems, setDayItems] = useState<DayExerciseItem[]>([]);
   const flashTone = useFlashPreferenceStore((s) => s.tone);
   const recordSetCompletion = useInstrumentationStore((s) => s.recordSetCompletion);
   const router = useRouter();
+
+  // Item 7: long-pressing SELECT NEXT EXERCISE is the primary way to end a
+  // workout from here — it's the last exercise's screen, not the live screen,
+  // for most real sessions. Same tap-to-confirm-armed pattern session.tsx's
+  // bottom slab now uses (unified — see docs/PROGRESS.md), so a stray
+  // long-press can't end a running workout.
+  const [endArmed, setEndArmed] = useState(false);
+  const disarmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+    };
+  }, []);
+
+  // Item 2: a blocking recap before either exit route actually commits to
+  // moving on. 'exercise' shows just the exercise about to be left (after
+  // finalizeRemainingSets has already written it); 'end' shows every
+  // exercise in the whole session, fetched fresh right before ending.
+  const [recapMode, setRecapMode] = useState<'exercise' | 'end' | null>(null);
+  const [recapSections, setRecapSections] = useState<RecapSection[]>([]);
 
   useEffect(() => {
     // Nothing to load without a current exercise — the render below checks
@@ -184,12 +210,11 @@ function TransitionScreen({
     if (!sessionExerciseId || !exerciseId) return;
     let cancelled = false;
     (async () => {
-      const [existingSets, previousSessionExercise, historicalWeights, ex, inventory] = await Promise.all([
+      const [existingSets, previousSessionExercise, historicalWeights, ex] = await Promise.all([
         listSetsBySessionExercise(db, userId, sessionExerciseId),
         getMostRecentSessionExerciseForExercise(db, userId, exerciseId, session.id),
         listHistoricalWeightsForExercise(db, userId, exerciseId),
         getExerciseById(db, userId, exerciseId),
-        seedDefaultPlateInventoryIfEmpty(db, userId),
       ]);
       if (cancelled) return;
 
@@ -199,7 +224,6 @@ function TransitionScreen({
         if (!cancelled) setGhostSets(buildGhostSets(previousSets));
       }
       setExercise(ex);
-      setPlateInventory(inventory);
       const inferred = ex?.defaultWeightStep ?? inferWeightStep(historicalWeights);
       setWeightStep(inferred ?? DEFAULT_WEIGHT_STEP_KG);
       setLoaded(true);
@@ -249,12 +273,6 @@ function TransitionScreen({
     [mergedRows],
   );
   const rowsByIndex = useMemo(() => new Map(mergedRows.map((r) => [r.rowIndex, r])), [mergedRows]);
-  const nextGhostIndex = committedSets.length;
-
-  function resolveParentId(parentIndex: number | null): string | null {
-    if (parentIndex == null) return null;
-    return committedSets[parentIndex]?.id ?? null;
-  }
 
   async function commitNewSet(input: { weightKg: number; reps: number; setType: SetType; parentSetId: string | null }) {
     if (!sessionExerciseId) return null;
@@ -276,18 +294,44 @@ function TransitionScreen({
     return created;
   }
 
+  // Item 10: any row is directly editable, not just the next unconfirmed
+  // ghost in order. Invariant 1 still holds — the edit writes to SQLite the
+  // moment it happens — but writing row N before row N-1 exists would break
+  // the index-contiguity setRowOrdering/drop-set parent-linking rely on, so
+  // any ghost rows still ahead of targetIndex are silently committed first,
+  // using whatever values they currently show (ghost defaults if the user
+  // never touched them — the same values finalizeRemainingSets would use
+  // for an untouched row at exit time anyway).
+  async function commitThrough(targetIndex: number, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
+    if (!sessionExerciseId) return;
+    let local = committedSets;
+    for (let i = local.length; i <= targetIndex; i++) {
+      const row = rowsByIndex.get(i);
+      if (!row) break;
+      const isTarget = i === targetIndex;
+      const parentSetId = row.parentIndex != null ? (local[row.parentIndex]?.id ?? null) : null;
+      const created = await createSet(db, {
+        userId,
+        sessionExerciseId,
+        index: local.length,
+        weightKg: isTarget ? (patch.weightKg ?? row.weightKg) : row.weightKg,
+        reps: isTarget ? (patch.reps ?? row.reps) : row.reps,
+        setType: isTarget ? (patch.setType ?? row.setType) : row.setType,
+        parentSetId,
+        restAfterSeconds: null,
+        completedAt: new Date(),
+      });
+      if (created) {
+        local = [...local, created];
+        if (isTarget) recordSetCompletion(exercise?.name ?? '', created.index);
+      }
+    }
+    setCommittedSets(local);
+  }
+
   function applyValueToRow(row: MergedRow, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
     if (row.isGhost) {
-      if (row.rowIndex !== nextGhostIndex) return; // gated: ghosts confirm top-to-bottom (see setRowOrdering's index-contiguity note)
-      // Use the already-merged row's own values, not ghostSets[row.rowIndex]
-      // directly — a row padded out beyond real ghost data (setsDone higher
-      // than history) has no backing GhostSet to index into.
-      void commitNewSet({
-        weightKg: patch.weightKg ?? row.weightKg,
-        reps: patch.reps ?? row.reps,
-        setType: patch.setType ?? row.setType,
-        parentSetId: resolveParentId(row.parentIndex),
-      });
+      void commitThrough(row.rowIndex, patch);
       return;
     }
     const set = committedSets[row.rowIndex];
@@ -298,33 +342,26 @@ function TransitionScreen({
   }
 
   function handleWeightStep(row: MergedRow, direction: 1 | -1) {
-    if (row.isGhost && row.rowIndex !== nextGhostIndex) return;
     applyValueToRow(row, { weightKg: round2(Math.max(0, row.weightKg + direction * weightStep)) });
   }
 
   function handleRepsStep(row: MergedRow, direction: 1 | -1) {
-    if (row.isGhost && row.rowIndex !== nextGhostIndex) return;
     applyValueToRow(row, { reps: Math.max(0, row.reps + direction) });
   }
 
   function handleToggleWarmup(row: MergedRow) {
-    if (row.isGhost && row.rowIndex !== nextGhostIndex) return;
     applyValueToRow(row, { setType: row.setType === 'warmup' ? 'working' : 'warmup' });
   }
 
-  const plateConvention: PlateConvention | null =
-    exercise && exercise.loadConvention !== 'bodyweight' ? exercise.loadConvention : null;
-  const usesPlateCalculator =
-    plateConvention != null && exercise != null && (exercise.equipmentType === 'barbell' || exercise.equipmentType === 'plate_loaded');
+  function handleSetBodyweight(row: MergedRow) {
+    applyValueToRow(row, { weightKg: 0 });
+  }
 
   function handleTapWeight(row: MergedRow) {
-    if (row.isGhost && row.rowIndex !== nextGhostIndex) return;
-    if (usesPlateCalculator) setCalculatorRowIndex(row.rowIndex);
-    else setKeypadTarget({ rowIndex: row.rowIndex, field: 'weight' });
+    setKeypadTarget({ rowIndex: row.rowIndex, field: 'weight' });
   }
 
   function handleTapReps(row: MergedRow) {
-    if (row.isGhost && row.rowIndex !== nextGhostIndex) return;
     setKeypadTarget({ rowIndex: row.rowIndex, field: 'reps' });
   }
 
@@ -336,14 +373,6 @@ function TransitionScreen({
     if (!row) return;
     if (field === 'weight') applyValueToRow(row, { weightKg: Math.max(0, value) });
     else applyValueToRow(row, { reps: Math.max(0, Math.round(value)) });
-  }
-
-  function handlePlateApply(weightKg: number) {
-    if (calculatorRowIndex == null) return;
-    const row = rowsByIndex.get(calculatorRowIndex);
-    setCalculatorRowIndex(null);
-    if (!row) return;
-    applyValueToRow(row, { weightKg });
   }
 
   function handleAddSet() {
@@ -358,8 +387,37 @@ function TransitionScreen({
     void commitNewSet({ weightKg: parent.weightKg, reps: parent.reps, setType: 'dropset', parentSetId: parent.id });
   }
 
+  // Today's programme day, in the order the template specifies — an
+  // exercise is "done" once it has at least one committed set logged this
+  // session, and is greyed out / untappable in that state.
+  async function loadDayItems() {
+    if (!session.templateId) return;
+    const [templateExercises, detail] = await Promise.all([
+      listTemplateExercisesByTemplate(db, userId, session.templateId),
+      getSessionDetail(db, userId, session.id),
+    ]);
+    const doneExerciseIds = new Set(detail.filter((d) => d.sets.length > 0).map((d) => d.exerciseId));
+    const sorted = [...templateExercises].sort((a, b) => a.orderIndex - b.orderIndex);
+    const items: DayExerciseItem[] = [];
+    for (const te of sorted) {
+      const ex = await getExerciseById(db, userId, te.exerciseId);
+      if (ex) items.push({ templateExerciseId: te.id, exercise: ex, done: doneExerciseIds.has(ex.id) });
+    }
+    setDayItems(items);
+  }
+
+  function openNextExercisePicker() {
+    if (session.templateId) {
+      void loadDayItems();
+      setDayPickerOpen(true);
+    } else {
+      setPickerOpen(true);
+    }
+  }
+
   async function handlePickNextExercise(picked: Exercise) {
     setPickerOpen(false);
+    setDayPickerOpen(false);
     const existing = await listSessionExercisesBySession(db, userId, session.id);
     let se = existing.find((s) => s.exerciseId === picked.id) ?? null;
     if (!se) {
@@ -387,19 +445,27 @@ function TransitionScreen({
     });
   }
 
-  async function handleConfirmAll() {
-    if (!sessionExerciseId) return;
+  // No explicit "confirm" step — whatever is showing for this exercise
+  // (ghost-prefilled or hand-edited) becomes the final record the moment the
+  // user leaves it, via either exit route below. Iterates in ascending
+  // rowIndex order (not display order) so a drop set's parent is always
+  // already committed by the time the drop set itself is reached. Returns
+  // the final array so callers can build a recap from it without waiting on
+  // React state to re-render.
+  async function finalizeRemainingSets(): Promise<CommittedSet[]> {
+    if (!sessionExerciseId) return committedSets;
     let local = committedSets;
-    for (let i = nextGhostIndex; i < ghostSets.length; i++) {
-      const ghost = ghostSets[i];
-      const parentSetId = ghost.parentIndex != null ? (local[ghost.parentIndex]?.id ?? null) : null;
+    for (let i = local.length; i < mergedRows.length; i++) {
+      const row = rowsByIndex.get(i);
+      if (!row) continue;
+      const parentSetId = row.parentIndex != null ? (local[row.parentIndex]?.id ?? null) : null;
       const created = await createSet(db, {
         userId,
         sessionExerciseId,
         index: local.length,
-        weightKg: ghost.weightKg,
-        reps: ghost.reps,
-        setType: ghost.setType,
+        weightKg: row.weightKg,
+        reps: row.reps,
+        setType: row.setType,
         parentSetId,
         restAfterSeconds: null,
         completedAt: new Date(),
@@ -407,9 +473,75 @@ function TransitionScreen({
       if (created) local = [...local, created];
     }
     setCommittedSets(local);
+    return local;
   }
 
-  const exerciseName = (exercise?.name ?? strings.homeFreestyleLabel).toUpperCase();
+  function armEndConfirm() {
+    void finalizeRemainingSets();
+    setEndArmed(true);
+    if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+    disarmTimeoutRef.current = setTimeout(() => setEndArmed(false), 4000);
+  }
+
+  // Item 2: neither exit route acts immediately — each opens a blocking
+  // recap of what's about to be locked in first (ExitRecapModal), so a
+  // logging mistake surfaces before it's sealed rather than after.
+  async function handleNextExercisePress() {
+    if (endArmed) {
+      if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+      setEndArmed(false);
+      const detail = await getSessionDetail(db, userId, session.id);
+      setRecapSections(
+        detail.map((ex) => ({
+          name: ex.exerciseName,
+          shorthand: formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—',
+        })),
+      );
+      setRecapMode('end');
+      return;
+    }
+    // Nothing logged for this slot yet (e.g. still in the pre-workout "Warm
+    // up" state with no exercise picked) — there's nothing to recap, so go
+    // straight to picking the next exercise instead of showing an empty
+    // confirmation screen.
+    if (!sessionExerciseId || !exerciseId || !exercise) {
+      openNextExercisePicker();
+      return;
+    }
+    const finalSets = await finalizeRemainingSets();
+    setRecapSections([
+      {
+        name: exercise?.name ?? '',
+        shorthand: formatSessionExerciseShorthand(finalSets, exercise?.loadConvention === 'bodyweight') || '—',
+      },
+    ]);
+    setRecapMode('exercise');
+  }
+
+  async function finishSession() {
+    await endSession(db, userId, session.id);
+    // Backup failure must never block ending the session — same guarantee
+    // session.tsx's own end-session control makes.
+    try {
+      await runBackupRetention();
+    } catch {
+      // intentionally swallowed
+    }
+    router.replace({ pathname: '/session-summary', params: { sessionId: session.id } });
+  }
+
+  function handleRecapConfirm() {
+    const mode = recapMode;
+    setRecapMode(null);
+    if (mode === 'end') void finishSession();
+    else if (mode === 'exercise') openNextExercisePicker();
+  }
+
+  function handleRecapBack() {
+    setRecapMode(null);
+  }
+
+  const exerciseName = (exercise?.name ?? strings.sessionNoExerciseLabel).toUpperCase();
   let topLevelCounter = 0;
 
   return (
@@ -439,21 +571,12 @@ function TransitionScreen({
           </View>
         ) : !loaded ? null : (
           <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-            {nextGhostIndex < ghostSets.length ? (
-              <Pressable onPress={() => void handleConfirmAll()}>
-                <Slab tone="secondary" height={size.listRow}>
-                  <Text style={[type.label, styles.onSlabText]}>{strings.transitionConfirmAllButton}</Text>
-                </Slab>
-              </Pressable>
-            ) : null}
-
             {exercise
               ? displayOrder.map((rowIndex) => {
                   const row = rowsByIndex.get(rowIndex);
                   if (!row) return null;
                   const isDropSet = row.parentIndex != null;
                   if (!isDropSet) topLevelCounter += 1;
-                  const disabled = row.isGhost && row.rowIndex !== nextGhostIndex;
                   const display = deriveLoadDisplay(exercise.loadConvention, exercise.equipmentType, row.weightKg);
                   const isLastCommitted = !row.isGhost && row.rowIndex === committedSets.length - 1;
 
@@ -465,13 +588,14 @@ function TransitionScreen({
                       reps={row.reps}
                       confirmed={!row.isGhost}
                       warmup={row.setType === 'warmup'}
-                      disabled={disabled}
                       indent={isDropSet}
                       conventionLabel={display.conventionLabel}
                       totalLine={display.totalLine}
+                      bodyweightRelevant={exercise.loadConvention === 'bodyweight'}
                       onWeightStep={(d) => handleWeightStep(row, d)}
                       onRepsStep={(d) => handleRepsStep(row, d)}
                       onToggleWarmup={() => handleToggleWarmup(row)}
+                      onSetBodyweight={() => handleSetBodyweight(row)}
                       onTapWeight={() => handleTapWeight(row)}
                       onTapReps={() => handleTapReps(row)}
                       onAddDropSet={!row.isGhost && row.setType === 'working' ? () => handleAddDropSet(row) : undefined}
@@ -489,14 +613,32 @@ function TransitionScreen({
           </ScrollView>
         )}
 
-        <Pressable style={styles.nextExerciseTouch} onPress={() => setPickerOpen(true)}>
+        <Pressable
+          style={styles.nextExerciseTouch}
+          onPress={() => void handleNextExercisePress()}
+          onLongPress={armEndConfirm}
+          delayLongPress={600}
+        >
           <Slab tone="primary" height={size.bottomSlab}>
-            <Text style={[type.label, styles.onSlabText]}>{strings.transitionSelectNextExerciseLabel}</Text>
+            <Text style={[type.label, endArmed ? styles.onSlabTextArmed : styles.onSlabText]}>
+              {endArmed ? strings.sessionEndConfirmPrompt.toUpperCase() : strings.transitionSelectNextExerciseLabel}
+            </Text>
           </Slab>
         </Pressable>
       </SafeAreaView>
 
       <FlashOverlay ref={flashRef} tone={flashTone} />
+
+      <DayExercisePicker
+        visible={dayPickerOpen}
+        items={dayItems}
+        onSelect={(picked) => void handlePickNextExercise(picked)}
+        onAddInstead={() => {
+          setDayPickerOpen(false);
+          setPickerOpen(true);
+        }}
+        onClose={() => setDayPickerOpen(false)}
+      />
 
       <ExercisePicker
         visible={pickerOpen}
@@ -514,23 +656,14 @@ function TransitionScreen({
         onCancel={() => setKeypadTarget(null)}
       />
 
-      {exercise && plateConvention && usesPlateCalculator ? (
-        <PlateCalculator
-          visible={calculatorRowIndex != null}
-          db={db}
-          userId={userId}
-          exerciseId={exercise.id}
-          exerciseName={exercise.name}
-          convention={plateConvention}
-          barWeightKg={exercise.barWeightKg}
-          targetKg={calculatorRowIndex != null ? (rowsByIndex.get(calculatorRowIndex)?.weightKg ?? 0) : 0}
-          inventory={plateInventory}
-          onClose={() => setCalculatorRowIndex(null)}
-          onApplyWeight={handlePlateApply}
-          onBarWeightSet={(bw) => setExercise((prev) => (prev ? { ...prev, barWeightKg: bw } : prev))}
-          onInventoryChanged={setPlateInventory}
-        />
-      ) : null}
+      <ExitRecapModal
+        visible={recapMode != null}
+        title={recapMode === 'end' ? strings.recapEndTitle : strings.recapExerciseTitle}
+        sections={recapSections}
+        confirmLabel={recapMode === 'end' ? strings.recapEndConfirmButton : strings.recapExerciseConfirmButton}
+        onConfirm={handleRecapConfirm}
+        onBack={handleRecapBack}
+      />
     </View>
   );
 }
@@ -556,6 +689,13 @@ const styles = StyleSheet.create({
   },
   onSlabText: {
     color: color.onSlab,
+    textAlign: 'center',
+  },
+  // §2's danger token is reserved for destructive confirmations — this is
+  // the confirm-armed state of the end-session long-press, same as
+  // session.tsx's top-bar treatment.
+  onSlabTextArmed: {
+    color: color.danger,
     textAlign: 'center',
   },
   emptyState: {

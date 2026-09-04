@@ -3,21 +3,29 @@ import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 
 import type { ProgressPoint } from '@/domain/progressChart';
-import { strings } from '@/strings';
 import { color, type } from '@/theme';
 
-// DESIGN-SPEC.md §6 (Progress half of screen 6): top-working-set weight and
-// reps over time, on a shared time axis, independently scaled on y since kg
-// and rep-count are different units. Weight in slab-primary, reps in
-// slab-secondary — the one place accent colour is a foreground (§2 rule 2),
-// because a line has no fill area. Degenerate cases (a single point, or every
-// value identical) are centred rather than divided by zero.
+// DESIGN-SPEC.md §6 (Progress half of screen 6): top-working-set weight over
+// time. Both axes self-adjust to the data's actual range — the x-axis spans
+// the earliest to latest session in `points` (not a fixed calendar window),
+// and the y-axis spans the min/max top weight. Degenerate cases (a single
+// point, or every value identical) are centred rather than divided by zero.
 
-const CHART_HEIGHT = 220;
-const PADDING = 16;
+const CHART_HEIGHT = 240;
+const PADDING_TOP = 16;
+const PADDING_BOTTOM = 28;
+const PADDING_LEFT = 8;
+const PADDING_RIGHT = 8;
 const POINT_RADIUS = 4;
 
 type Point = { x: number; y: number };
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatAxisDate(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
 
 export function ProgressChart({ points }: { points: ProgressPoint[] }) {
   const [width, setWidth] = useState(0);
@@ -26,103 +34,99 @@ export function ProgressChart({ points }: { points: ProgressPoint[] }) {
     setWidth(e.nativeEvent.layout.width);
   }
 
-  const weightSeries = buildSeries(points, width, (p) => p.topWeightKg);
-  const repsSeries = buildSeries(points, width, (p) => p.reps);
+  const dates = points.map((p) => p.dateMs);
+  const domainStart = dates.length > 0 ? Math.min(...dates) : 0;
+  const domainEnd = dates.length > 0 ? Math.max(...dates) : 0;
+
+  const weightSeries = buildSeries(points, width, domainStart, domainEnd);
+
+  const weightValues = points.map((p) => p.topWeightKg);
+  const weightMin = weightValues.length > 0 ? Math.min(...weightValues) : 0;
+  const weightMax = weightValues.length > 0 ? Math.max(...weightValues) : 0;
 
   return (
     <View>
-      <View style={styles.legendRow}>
-        <LegendDot tone={color.slabPrimary} label={strings.progressWeightLegend} />
-        <LegendDot tone={color.slabSecondary} label={strings.progressRepsLegend} />
+      <View style={styles.plotRow}>
+        <View style={styles.yAxisColumn}>
+          <Text style={[type.caption, styles.axisLabelPrimary]}>{weightMax}</Text>
+          <Text style={[type.caption, styles.axisLabelPrimary]}>{weightMin}</Text>
+        </View>
+
+        <View style={styles.chartBox} onLayout={handleLayout}>
+          {width > 0 ? (
+            <Svg width={width} height={CHART_HEIGHT}>
+              {weightSeries.length > 1 ? (
+                <Polyline
+                  points={weightSeries.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke={color.slabPrimary}
+                  strokeWidth={2}
+                />
+              ) : null}
+              {weightSeries.map((p, i) => (
+                <Circle key={`w-${i}`} cx={p.x} cy={p.y} r={POINT_RADIUS} fill={color.slabPrimary} />
+              ))}
+            </Svg>
+          ) : null}
+        </View>
       </View>
-      <View style={styles.chartBox} onLayout={handleLayout}>
-        {width > 0 ? (
-          <Svg width={width} height={CHART_HEIGHT}>
-            {weightSeries.length > 1 ? (
-              <Polyline
-                points={weightSeries.map((p) => `${p.x},${p.y}`).join(' ')}
-                fill="none"
-                stroke={color.slabPrimary}
-                strokeWidth={2}
-              />
-            ) : null}
-            {repsSeries.length > 1 ? (
-              <Polyline
-                points={repsSeries.map((p) => `${p.x},${p.y}`).join(' ')}
-                fill="none"
-                stroke={color.slabSecondary}
-                strokeWidth={2}
-              />
-            ) : null}
-            {weightSeries.map((p, i) => (
-              <Circle key={`w-${i}`} cx={p.x} cy={p.y} r={POINT_RADIUS} fill={color.slabPrimary} />
-            ))}
-            {repsSeries.map((p, i) => (
-              <Circle key={`r-${i}`} cx={p.x} cy={p.y} r={POINT_RADIUS} fill={color.slabSecondary} />
-            ))}
-          </Svg>
-        ) : null}
+
+      <View style={styles.xAxisRow}>
+        <Text style={[type.caption, styles.xAxisLabel]}>{formatAxisDate(domainStart)}</Text>
+        <Text style={[type.caption, styles.xAxisLabel]}>{formatAxisDate((domainStart + domainEnd) / 2)}</Text>
+        <Text style={[type.caption, styles.xAxisLabel]}>{formatAxisDate(domainEnd)}</Text>
       </View>
     </View>
   );
 }
 
-function buildSeries(points: ProgressPoint[], width: number, valueOf: (p: ProgressPoint) => number): Point[] {
+function buildSeries(points: ProgressPoint[], width: number, domainStart: number, domainEnd: number): Point[] {
   if (width <= 0 || points.length === 0) return [];
-  const innerWidth = Math.max(1, width - PADDING * 2);
-  const innerHeight = CHART_HEIGHT - PADDING * 2;
+  const innerWidth = Math.max(1, width - PADDING_LEFT - PADDING_RIGHT);
+  const innerHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
+  const domainSpan = Math.max(1, domainEnd - domainStart);
 
-  const dates = points.map((p) => p.dateMs);
-  const minDate = Math.min(...dates);
-  const maxDate = Math.max(...dates);
-  const dateSpan = maxDate - minDate;
-
-  const values = points.map(valueOf);
+  const values = points.map((p) => p.topWeightKg);
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
   const valueSpan = maxValue - minValue;
 
-  return points.map((p, i) => {
-    const x =
-      points.length === 1 || dateSpan === 0
-        ? PADDING + innerWidth * (points.length === 1 ? 0.5 : i / (points.length - 1))
-        : PADDING + ((p.dateMs - minDate) / dateSpan) * innerWidth;
-    const value = valueOf(p);
-    const y = valueSpan === 0 ? PADDING + innerHeight / 2 : PADDING + innerHeight - ((value - minValue) / valueSpan) * innerHeight;
+  return points.map((p) => {
+    const x = PADDING_LEFT + ((p.dateMs - domainStart) / domainSpan) * innerWidth;
+    const y =
+      valueSpan === 0
+        ? PADDING_TOP + innerHeight / 2
+        : PADDING_TOP + innerHeight - ((p.topWeightKg - minValue) / valueSpan) * innerHeight;
     return { x, y };
   });
 }
 
-function LegendDot({ tone, label }: { tone: string; label: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendSwatch, { backgroundColor: tone }]} />
-      <Text style={[type.caption, styles.legendLabel]}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  legendRow: {
+  plotRow: {
     flexDirection: 'row',
-    gap: 24,
+    alignItems: 'stretch',
     paddingHorizontal: 24,
-    paddingBottom: 8,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
-  legendSwatch: {
-    width: 12,
-    height: 12,
+  yAxisColumn: {
+    justifyContent: 'space-between',
+    paddingVertical: PADDING_TOP,
+    paddingBottom: PADDING_BOTTOM,
   },
-  legendLabel: {
-    color: color.textMuted,
+  axisLabelPrimary: {
+    color: color.slabPrimary,
   },
   chartBox: {
-    width: '100%',
+    flex: 1,
     height: CHART_HEIGHT,
+  },
+  xAxisRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginTop: 4,
+  },
+  xAxisLabel: {
+    color: color.textMuted,
   },
 });

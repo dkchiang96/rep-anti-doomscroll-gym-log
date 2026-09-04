@@ -47,20 +47,38 @@ type ResetButtonProps = {
   onLongPress: () => void;
 };
 
-// A stray tap must not wipe the clock — long-press only, per §5.3.
+// A stray tap must not wipe the clock — long-press only, per §5.3. The
+// pressed-state colour swap (divider grey → primary yellow) is the only
+// feedback available during the 600ms hold since there's no haptics engine
+// (removed in R0) — without it, a press that falls short of the threshold
+// looked completely inert and read as "this button doesn't work."
 export function TransportResetButton({ onLongPress }: ResetButtonProps) {
   return (
-    <Pressable onLongPress={onLongPress} delayLongPress={600} hitSlop={8} style={styles.resetCircle}>
-      <Svg width={20} height={20} viewBox="0 0 24 24">
-        <Path
-          d="M20 12a8 8 0 1 1-2.34-5.66"
-          stroke={color.divider}
-          strokeWidth={2.5}
-          fill="none"
-          strokeLinecap="round"
-        />
-        <Path d="M20 4v5h-5" stroke={color.divider} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
+    <Pressable
+      onLongPress={onLongPress}
+      delayLongPress={600}
+      hitSlop={8}
+      style={({ pressed }) => [styles.resetCircle, pressed ? styles.resetCirclePressed : null]}
+    >
+      {({ pressed }) => (
+        <Svg width={20} height={20} viewBox="0 0 24 24">
+          <Path
+            d="M20 12a8 8 0 1 1-2.34-5.66"
+            stroke={pressed ? color.slabPrimary : color.divider}
+            strokeWidth={2.5}
+            fill="none"
+            strokeLinecap="round"
+          />
+          <Path
+            d="M20 4v5h-5"
+            stroke={pressed ? color.slabPrimary : color.divider}
+            strokeWidth={2.5}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </Svg>
+      )}
     </Pressable>
   );
 }
@@ -86,5 +104,8 @@ const styles = StyleSheet.create({
     borderColor: color.divider,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  resetCirclePressed: {
+    borderColor: color.slabPrimary,
   },
 });

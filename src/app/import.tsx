@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   smallTouch: {
-    minHeight: 44,
+    minHeight: size.minTouchTarget,
     justifyContent: 'center',
   },
   smallTouchLabel: {
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chipTouch: {
-    minHeight: 44,
+    minHeight: size.minTouchTarget,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',

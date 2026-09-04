@@ -26,6 +26,16 @@ export interface ProgressPoint {
   reps: number;
 }
 
+// Item 9: the Progress chart shows a fixed last-30-days window, not
+// all-time history — filtered before buildProgressPoints ever sees the
+// entries, so a session skipped for a stretch reads as a real gap within a
+// stable 30-day frame instead of the chart's date axis silently
+// contracting to whatever's actually there.
+export function filterLastNDays(entries: ProgressSessionEntry[], nowMs: number, days = 30): ProgressSessionEntry[] {
+  const cutoff = nowMs - days * 24 * 60 * 60 * 1000;
+  return entries.filter((e) => e.startedAt.getTime() >= cutoff && e.startedAt.getTime() <= nowMs);
+}
+
 export function buildProgressPoints(entries: ProgressSessionEntry[]): ProgressPoint[] {
   const points: ProgressPoint[] = [];
 
