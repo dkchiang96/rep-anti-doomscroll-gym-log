@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Clock, FlashOverlay, Slab, TransportButton, TransportResetButton } from '@/components/ui';
+import { Clock, FlashOverlay, Slab, TransportButton, TransportResetButton, useRestNotifications } from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
 import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
 import { runBackupRetention } from '@/data/backup';
@@ -12,6 +12,7 @@ import { useDatabase } from '@/data/DatabaseProvider';
 import { getExerciseById } from '@/data/repositories/exerciseRepository';
 import { getSessionDetail } from '@/data/repositories/historyRepository';
 import { getProgrammeById } from '@/data/repositories/programmeRepository';
+import { listSessionHistoryForExercise } from '@/data/repositories/progressRepository';
 import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
@@ -56,21 +57,56 @@ type CurrentExercise = {
 type LoadState =
   | { status: 'loading' }
   | { status: 'none' }
-  | { status: 'ready'; session: Session; title: string; exercise: CurrentExercise; flashIntervalMs: number };
+  | {
+      status: 'ready';
+      session: Session;
+      title: string;
+      exercise: CurrentExercise;
+      flashIntervalMs: number;
+      notificationsEnabled: boolean;
+    };
 
 const DEFAULT_FLASH_INTERVAL_MS = 30_000;
+
+// Same small hand-rolled date formatter progress.tsx/history.tsx already
+// each carry their own copy of — not extracted into a shared util there
+// either; three duplicated lines beat a new abstraction for something this
+// small (see docs/PROGRESS.md's R6 entry).
+const RECENT_ROUND_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatRecentRoundDate(d: Date): string {
+  return `${d.getDate()} ${RECENT_ROUND_MONTHS[d.getMonth()]}`;
+}
 
 export default function LiveSession() {
   useKeepAwake();
   const { db, userId } = useDatabase();
   const router = useRouter();
-  const params = useLocalSearchParams<{ sessionExerciseId?: string; exerciseId?: string }>();
+  const params = useLocalSearchParams<{
+    sessionExerciseId?: string;
+    exerciseId?: string;
+    targetSets?: string;
+    targetRepsMin?: string;
+    targetRepsMax?: string;
+  }>();
   const pickedSessionExerciseId = typeof params.sessionExerciseId === 'string' ? params.sessionExerciseId : null;
   const pickedExerciseId = typeof params.exerciseId === 'string' ? params.exerciseId : null;
+  // Item 5: a substituted-in exercise carries its replaced exercise's target
+  // across as route params, since it can't be found by matching today's
+  // template (it isn't part of it) the way a same-exercise pick is below.
+  // Kept as primitives here (recomputed inside the effect below) rather than
+  // a derived object, so the effect's dependency array can list stable
+  // values instead of a new object identity every render.
+  const overrideTargetSets = params.targetSets != null ? Number(params.targetSets) : NaN;
+  const overrideTargetRepsMin = params.targetRepsMin != null ? Number(params.targetRepsMin) : NaN;
+  const overrideTargetRepsMax = params.targetRepsMax != null ? Number(params.targetRepsMax) : NaN;
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
     let cancelled = false;
+    const overrideTarget =
+      Number.isFinite(overrideTargetSets) && Number.isFinite(overrideTargetRepsMin) && Number.isFinite(overrideTargetRepsMax)
+        ? { sets: overrideTargetSets, repsMin: overrideTargetRepsMin, repsMax: overrideTargetRepsMax }
+        : null;
     (async () => {
       const active = await getActiveSession(db, userId);
       if (!active) {
@@ -80,6 +116,7 @@ export default function LiveSession() {
 
       const user = await getUser(db, userId);
       const flashIntervalMs = (user?.restFlashIntervalSeconds ?? 30) * 1000 || DEFAULT_FLASH_INTERVAL_MS;
+      const notificationsEnabled = user?.restNotificationEnabled ?? true;
 
       let title: string = strings.sessionPlaceholderFreestyleTitle;
       let templateExercises: Awaited<ReturnType<typeof listTemplateExercisesByTemplate>> = [];
@@ -113,9 +150,9 @@ export default function LiveSession() {
             equipmentType: ex.equipmentType,
             loadConvention: ex.loadConvention,
             barWeightKg: ex.barWeightKg,
-            target: templateExercise
+            target: overrideTarget ?? (templateExercise
               ? { sets: templateExercise.targetSets, repsMin: templateExercise.targetRepsMin, repsMax: templateExercise.targetRepsMax }
-              : null,
+              : null),
           };
         }
       }
@@ -126,12 +163,12 @@ export default function LiveSession() {
       // (transition.tsx), which lists this template's exercises in the
       // programme's own sequence.
 
-      if (!cancelled) setState({ status: 'ready', session: active, title, exercise, flashIntervalMs });
+      if (!cancelled) setState({ status: 'ready', session: active, title, exercise, flashIntervalMs, notificationsEnabled });
     })();
     return () => {
       cancelled = true;
     };
-  }, [db, userId, pickedSessionExerciseId, pickedExerciseId]);
+  }, [db, userId, pickedSessionExerciseId, pickedExerciseId, overrideTargetSets, overrideTargetRepsMin, overrideTargetRepsMax]);
 
   if (state.status === 'none') {
     router.replace('/');
@@ -172,13 +209,45 @@ function LiveSessionScreen({
   state: Extract<LoadState, { status: 'ready' }>;
   onNextExercise: (setsDone: number) => void;
 }) {
-  const { session, title, exercise, flashIntervalMs } = state;
+  const { session, title, exercise, flashIntervalMs, notificationsEnabled } = state;
   const router = useRouter();
   useAttachStopwatch(db, userId, session);
   const stopwatch = useStopwatch();
+  // Item 3: same rest-reminder hook and trigger condition as transition.tsx
+  // — only while the clock is actually running, mirroring the on-screen
+  // flash below.
+  useRestNotifications({ enabled: notificationsEnabled && stopwatch.isRunning, intervalSeconds: flashIntervalMs / 1000 });
   const flashTone = useFlashPreferenceStore((s) => s.tone);
   const flashRef = useRef<FlashOverlayHandle>(null);
   const previousElapsedRef = useRef(stopwatch.elapsedMs);
+
+  // Item 8: the last 3 times this exercise was performed, for a glance while
+  // deciding what to target — excludes the current (still-empty at this
+  // point) session.
+  const [recentRounds, setRecentRounds] = useState<{ sessionId: string; label: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // No synchronous setState before this await — the empty-history case
+      // for "no exercise yet" resolves through the same async path as a
+      // real fetch, rather than branching out of the effect body directly.
+      const history = exercise ? await listSessionHistoryForExercise(db, userId, exercise.id) : [];
+      if (cancelled) return;
+      const isBodyweight = exercise?.loadConvention === 'bodyweight';
+      const rounds = history
+        .filter((entry) => entry.sessionId !== session.id)
+        .slice(-3)
+        .reverse()
+        .map((entry) => ({
+          sessionId: entry.sessionId,
+          label: `${formatRecentRoundDate(entry.startedAt)} — ${formatSessionExerciseShorthand(entry.sets, isBodyweight) || '—'}`,
+        }));
+      setRecentRounds(rounds);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, userId, exercise, session.id]);
 
   // Long-press (matching RESET's pattern) arms a brief tap-to-confirm state
   // rather than acting immediately, so a stray long-press can't end a
@@ -296,6 +365,17 @@ function LiveSessionScreen({
           )}
         </Slab>
 
+        {recentRounds.length > 0 ? (
+          <View style={styles.recentRoundsStrip}>
+            <Text style={[type.caption, styles.recentRoundsHeading]}>{strings.sessionRecentRoundsHeading}</Text>
+            {recentRounds.map((round) => (
+              <Text key={round.sessionId} style={[type.caption, styles.recentRoundsLine]} numberOfLines={1}>
+                {round.label}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
         <View style={[styles.canvas, { flex: liveZoneFlex.canvas }]}>
           <Pressable
             style={styles.setsDoneTouch}
@@ -373,6 +453,21 @@ const styles = StyleSheet.create({
   onSlabTextArmed: {
     color: color.danger,
     textAlign: 'center',
+  },
+  // Item 8: a compact, deliberately small-type strip — a glance while
+  // deciding what to target, not a sixth zone competing with the numerals
+  // DESIGN-SPEC.md §5.1 reserves as the largest element on this screen.
+  recentRoundsStrip: {
+    width: '100%',
+    backgroundColor: color.bg,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  recentRoundsHeading: {
+    color: color.textMuted,
+  },
+  recentRoundsLine: {
+    color: color.textMuted,
   },
   canvas: {
     width: '100%',

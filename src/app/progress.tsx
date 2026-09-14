@@ -28,10 +28,23 @@ function formatEntryDate(d: Date): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Item 1: a time-range filter above the muscle-group chips. `null` means
+// "all time" — filterLastNDays is simply skipped rather than passed
+// Infinity, since it already treats "no call" as the unbounded case.
+type RangeOption = { key: string; label: string; days: number | null };
+const RANGE_OPTIONS: RangeOption[] = [
+  { key: '30d', label: strings.progressRange30d, days: 30 },
+  { key: '90d', label: strings.progressRange90d, days: 90 },
+  { key: '6m', label: strings.progressRange6m, days: 182 },
+  { key: '1y', label: strings.progressRange1y, days: 365 },
+  { key: 'all', label: strings.progressRangeAll, days: null },
+];
+
 export default function Progress() {
   const { db, userId } = useDatabase();
   const [library, setLibrary] = useState<Exercise[]>([]);
   const [chip, setChip] = useState<MuscleGroupChip | null>(null);
+  const [range, setRange] = useState<RangeOption>(RANGE_OPTIONS[0]);
   const [historyByExercise, setHistoryByExercise] = useState<Record<string, ProgressSessionEntry[]>>({});
   // Date.now() is impure — read once from an effect rather than during
   // render, same pattern used elsewhere in this codebase (session.tsx,
@@ -85,6 +98,20 @@ export default function Progress() {
       <Text style={[type.body, styles.prompt]}>{strings.progressPickPrompt}</Text>
 
       <View style={styles.chipRow}>
+        {RANGE_OPTIONS.map((option) => (
+          <Pressable
+            key={option.key}
+            onPress={() => setRange(option)}
+            style={[styles.chipTouch, range.key === option.key ? styles.chipActive : styles.chipInactive]}
+          >
+            <Text style={[type.caption, range.key === option.key ? styles.chipLabelActive : styles.chipLabelInactive]}>
+              {option.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={styles.chipRow}>
         {[...MUSCLE_GROUPS, OTHER_MUSCLE_GROUP_CHIP].map((group) => (
           <Pressable
             key={group}
@@ -103,7 +130,7 @@ export default function Progress() {
       {nowMs != null
         ? groupExercises.map((ex) => {
             const allHistory = historyByExercise[ex.id] ?? [];
-            const recentHistory = filterLastNDays(allHistory, nowMs);
+            const recentHistory = range.days != null ? filterLastNDays(allHistory, nowMs, range.days) : allHistory;
             const points = buildProgressPoints(recentHistory);
             const isBodyweight = ex.loadConvention === 'bodyweight';
             const tableRows = [...recentHistory].reverse();
@@ -115,7 +142,7 @@ export default function Progress() {
                 {points.length > 0 ? (
                   <>
                     <ProgressChart points={points} />
-                    <Text style={[type.caption, styles.sectionHeading]}>{strings.progressTableHeading}</Text>
+                    <Text style={[type.caption, styles.sectionHeading]}>{strings.progressTableHeading(range.label)}</Text>
                     {tableRows.map((entry) => (
                       <Text key={entry.sessionId} style={[type.body, styles.tableRow]}>
                         {formatEntryDate(entry.startedAt)} — {formatSessionExerciseShorthand(entry.sets, isBodyweight) || '—'}

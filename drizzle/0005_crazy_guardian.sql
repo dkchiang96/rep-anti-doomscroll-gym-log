@@ -1,0 +1,1 @@
+ALTER TABLE `user` ADD `rest_notification_enabled` integer DEFAULT true NOT NULL;

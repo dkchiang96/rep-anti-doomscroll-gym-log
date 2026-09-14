@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { HomeHeaderButton } from '@/components/HomeHeaderButton';
-import { FontGate } from '@/components/ui';
+import { ensureRestNotificationChannel, FontGate } from '@/components/ui';
 import { DatabaseProvider } from '@/data/DatabaseProvider';
 import { initDatabase, type AppInit } from '@/data/db';
 import { color, fontFamily, theme, type } from '@/theme';
@@ -17,6 +17,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     initDatabase().then(setAppInit);
+    // Item 3: the Android notification channel the rest-reminder hook
+    // schedules against — created once, up front, same "app-level side
+    // effect" precedent as DB init above.
+    void ensureRestNotificationChannel();
   }, []);
 
   // FontGate mounts immediately so font loading starts concurrently with

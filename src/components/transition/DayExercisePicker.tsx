@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -9,9 +10,13 @@ import { color, size, type } from '@/theme';
 // flow for a templated session: SELECT NEXT EXERCISE now first
 // offers today's programme day, in the sequence the programme specifies,
 // with exercises already logged this session greyed out and untappable.
-// The usual full-library ExercisePicker is still one tap away via the
-// footer button, for the "machine's occupied, substitute something else"
-// case the user explicitly called out — it isn't hidden or removed.
+//
+// Item 5: the footer offers two explicit routes rather than one "add
+// instead" catch-all — SUBSTITUTE AN EXERCISE first asks which of today's
+// exercises is being replaced (so the replacement can inherit its target),
+// ADD EXTRA EXERCISE skips straight to the full library with no target, same
+// as the old behaviour. A substituted exercise stays visible, dimmed with a
+// badge, and still tappable — the machine might free up.
 
 type Exercise = typeof exerciseTable.$inferSelect;
 
@@ -19,24 +24,49 @@ export type DayExerciseItem = {
   templateExerciseId: string;
   exercise: Exercise;
   done: boolean;
+  substituted: boolean;
+  targetSets: number;
+  targetRepsMin: number;
+  targetRepsMax: number;
 };
+
+type PickerMode = 'select' | 'substitute';
 
 type DayExercisePickerProps = {
   visible: boolean;
   items: DayExerciseItem[];
   onSelect: (exercise: Exercise) => void;
-  onAddInstead: () => void;
+  onNominateSubstitute: (item: DayExerciseItem) => void;
+  onAddExtra: () => void;
   onClose: () => void;
 };
 
-export function DayExercisePicker({ visible, items, onSelect, onAddInstead, onClose }: DayExercisePickerProps) {
+export function DayExercisePicker({ visible, items, onSelect, onNominateSubstitute, onAddExtra, onClose }: DayExercisePickerProps) {
+  const [mode, setMode] = useState<PickerMode>('select');
+  // Reset to the top-level footer every time the sheet opens — done during
+  // render (React's documented "adjusting state when a prop changes"
+  // pattern) rather than an effect, since it's a synchronous, purely local
+  // reset with nothing to await.
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) setMode('select');
+  }
+
+  function handleRowPress(item: DayExerciseItem) {
+    if (mode === 'substitute') onNominateSubstitute(item);
+    else onSelect(item.exercise);
+  }
+
   return (
     <Modal visible={visible} transparent={false} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <View style={styles.header}>
-          <Text style={[type.heading, styles.headerTitle]}>{strings.dayPickerTitle}</Text>
-          <Pressable onPress={onClose} style={styles.closeTouch}>
-            <Text style={[type.label, styles.closeLabel]}>{strings.addExerciseClose}</Text>
+          <Text style={[type.heading, styles.headerTitle]}>{mode === 'substitute' ? strings.dayPickerSubstituteTitle : strings.dayPickerTitle}</Text>
+          <Pressable onPress={mode === 'substitute' ? () => setMode('select') : onClose} style={styles.closeTouch}>
+            <Text style={[type.label, styles.closeLabel]}>
+              {mode === 'substitute' ? strings.dayPickerCancelButton : strings.addExerciseClose}
+            </Text>
           </Pressable>
         </View>
 
@@ -46,22 +76,35 @@ export function DayExercisePicker({ visible, items, onSelect, onAddInstead, onCl
             <Pressable
               key={item.templateExerciseId}
               disabled={item.done}
-              onPress={() => onSelect(item.exercise)}
+              onPress={() => handleRowPress(item)}
               style={[styles.row, item.done ? styles.rowDone : null]}
             >
               <Text style={[type.caption, styles.rowIndex]}>{i + 1}</Text>
-              <Text style={[type.label, styles.rowLabel, item.done ? styles.rowLabelDone : null]} numberOfLines={1}>
+              <Text
+                style={[type.label, styles.rowLabel, item.done || item.substituted ? styles.rowLabelDone : null]}
+                numberOfLines={1}
+              >
                 {item.exercise.name.toUpperCase()}
               </Text>
               {item.done ? <Text style={[type.caption, styles.doneBadge]}>{strings.dayPickerDoneBadge}</Text> : null}
+              {!item.done && item.substituted ? (
+                <Text style={[type.caption, styles.substitutedBadge]}>{strings.dayPickerSubstitutedBadge}</Text>
+              ) : null}
               <View style={styles.divider} />
             </Pressable>
           ))}
         </ScrollView>
 
-        <Pressable onPress={onAddInstead} style={styles.addInsteadTouch}>
-          <Text style={[type.label, styles.addInsteadLabel]}>{strings.dayPickerAddInsteadButton}</Text>
-        </Pressable>
+        {mode === 'select' ? (
+          <View style={styles.footer}>
+            <Pressable onPress={() => setMode('substitute')} style={styles.footerTouch}>
+              <Text style={[type.label, styles.footerLabel]}>{strings.dayPickerSubstituteButton}</Text>
+            </Pressable>
+            <Pressable onPress={onAddExtra} style={styles.footerTouch}>
+              <Text style={[type.label, styles.footerLabel]}>{strings.dayPickerAddExtraButton}</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </SafeAreaView>
     </Modal>
   );
@@ -82,6 +125,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: color.textPrimary,
+    flexShrink: 1,
   },
   closeTouch: {
     minHeight: size.minTouchTarget,
@@ -127,6 +171,9 @@ const styles = StyleSheet.create({
   doneBadge: {
     color: color.slabSecondary,
   },
+  substitutedBadge: {
+    color: color.textMuted,
+  },
   divider: {
     position: 'absolute',
     left: size.listRowPadding,
@@ -135,14 +182,19 @@ const styles = StyleSheet.create({
     height: size.divider,
     backgroundColor: color.divider,
   },
-  addInsteadTouch: {
+  footer: {
+    flexDirection: 'row',
+  },
+  footerTouch: {
+    flex: 1,
     minHeight: size.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: size.listRowPadding,
     paddingVertical: 12,
   },
-  addInsteadLabel: {
+  footerLabel: {
     color: color.slabSecondary,
+    textAlign: 'center',
   },
 });

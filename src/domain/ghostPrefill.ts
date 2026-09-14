@@ -38,3 +38,19 @@ export function buildGhostSets(previousSets: PreviousSet[]): GhostSet[] {
     parentIndex: s.parentSetId != null ? (positionById.get(s.parentSetId) ?? null) : null,
   }));
 }
+
+// Punch-list item 6: a row with no real ghost data behind it (no previous
+// occurrence of this exercise at all) used to default to 0kg/8 reps, which
+// meant tapping through both fields on every first-time exercise. 10kg/10
+// reps is a starting point close enough to not need adjusting for most
+// exercises, cutting that tapping down. When ghost history does exist, the
+// last logged set is still the fallback — this only changes what a row with
+// nothing behind it starts at.
+export const FALLBACK_WEIGHT_KG = 10;
+export const FALLBACK_REPS = 10;
+
+export function resolveFallbackSet(ghostSets: GhostSet[]): { weightKg: number; reps: number } {
+  const last = ghostSets[ghostSets.length - 1];
+  if (last) return { weightKg: last.weightKg, reps: last.reps };
+  return { weightKg: FALLBACK_WEIGHT_KG, reps: FALLBACK_REPS };
+}

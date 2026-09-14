@@ -12,6 +12,10 @@ export const user = sqliteTable('user', {
   restSoundEnabled: integer('rest_sound_enabled', { mode: 'boolean' }).notNull().default(false),
   restVibrationEnabled: integer('rest_vibration_enabled', { mode: 'boolean' }).notNull().default(false),
   restCameraFlashEnabled: integer('rest_camera_flash_enabled', { mode: 'boolean' }).notNull().default(false),
+  // Punch-list item 3: a repeating local notification at restFlashIntervalSeconds
+  // while the rest clock is running and the app is backgrounded — an on/off
+  // switch so it can be silenced without losing the on-screen flash cue.
+  restNotificationEnabled: integer('rest_notification_enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });

@@ -29,7 +29,11 @@ export async function updateDisplayName(db: AppDatabase, userId: string, display
 export type RestSettingsPatch = Partial<
   Pick<
     typeof user.$inferInsert,
-    'restFlashIntervalSeconds' | 'restSoundEnabled' | 'restVibrationEnabled' | 'restCameraFlashEnabled'
+    | 'restFlashIntervalSeconds'
+    | 'restSoundEnabled'
+    | 'restVibrationEnabled'
+    | 'restCameraFlashEnabled'
+    | 'restNotificationEnabled'
   >
 >;
 

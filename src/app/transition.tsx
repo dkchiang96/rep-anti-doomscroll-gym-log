@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Clock, FlashOverlay, SetInputRow, Slab, TransportButton } from '@/components/ui';
+import { Clock, FlashOverlay, SetInputRow, Slab, TransportButton, useRestNotifications } from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
 import { NumericKeypad } from '@/components/transition/NumericKeypad';
 import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
@@ -18,6 +18,7 @@ import {
   createSessionExercise,
   getMostRecentSessionExerciseForExercise,
   listSessionExercisesBySession,
+  updateSessionExercise,
 } from '@/data/repositories/sessionExerciseRepository';
 import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
@@ -31,7 +32,7 @@ import {
 import { getUser } from '@/data/repositories/userRepository';
 import type { exercise as exerciseTable, session as sessionTable, setEntry as setEntryTable } from '@/data/schema';
 import type { AppDatabase } from '@/data/types';
-import { buildGhostSets, type GhostSet, type SetType } from '@/domain/ghostPrefill';
+import { buildGhostSets, resolveFallbackSet, type GhostSet, type SetType } from '@/domain/ghostPrefill';
 import { deriveLoadDisplay } from '@/domain/loadConvention';
 import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
 import { orderRowsForDisplay } from '@/domain/setRowOrdering';
@@ -59,14 +60,10 @@ type CommittedSet = typeof setEntryTable.$inferSelect;
 type LoadState =
   | { status: 'loading' }
   | { status: 'none' }
-  | { status: 'ready'; session: Session; flashIntervalMs: number };
+  | { status: 'ready'; session: Session; flashIntervalMs: number; notificationsEnabled: boolean };
 
 const DEFAULT_FLASH_INTERVAL_MS = 30_000;
 const DEFAULT_WEIGHT_STEP_KG = 2.5;
-// Fallback reps for a row padded out beyond real ghost/committed data (a
-// setsDone count higher than anything history or this session has yet) —
-// same fallback handleAddSet already used for a brand-new row.
-const DEFAULT_BLANK_REPS = 8;
 
 interface MergedRow {
   rowIndex: number;
@@ -97,7 +94,8 @@ export default function Transition() {
       }
       const user = await getUser(db, userId);
       const flashIntervalMs = (user?.restFlashIntervalSeconds ?? 30) * 1000 || DEFAULT_FLASH_INTERVAL_MS;
-      if (!cancelled) setState({ status: 'ready', session: active, flashIntervalMs });
+      const notificationsEnabled = user?.restNotificationEnabled ?? true;
+      if (!cancelled) setState({ status: 'ready', session: active, flashIntervalMs, notificationsEnabled });
     })();
     return () => {
       cancelled = true;
@@ -147,10 +145,14 @@ function TransitionScreen({
   // number (0 included) is taken literally as "show exactly this many rows."
   setsDone: number | null;
 }) {
-  const { session, flashIntervalMs } = state;
+  const { session, flashIntervalMs, notificationsEnabled } = state;
   useAttachStopwatch(db, userId, session);
   const stopwatch = useStopwatch();
   useKeepAwake();
+  // Item 3: mirrors exactly when the on-screen flash fires (below) — a
+  // repeating background notification only while the clock is actually
+  // running, so leaving the app mid-rest doesn't go unnoticed.
+  useRestNotifications({ enabled: notificationsEnabled && stopwatch.isRunning, intervalSeconds: flashIntervalMs / 1000 });
 
   const { height: windowHeight } = useWindowDimensions();
   const compactBarHeight = Math.round(windowHeight * 0.13);
@@ -175,10 +177,16 @@ function TransitionScreen({
   const [pickerOpen, setPickerOpen] = useState(false);
   // A templated session offers today's programme day (in sequence, done
   // exercises greyed out) before falling back to the full library — the
-  // full ExercisePicker (pickerOpen above) stays reachable as the explicit
-  // "substitute" route via the day picker's footer button.
+  // full ExercisePicker (pickerOpen above) stays reachable via either of the
+  // day picker's two footer routes (substitute or add extra).
   const [dayPickerOpen, setDayPickerOpen] = useState(false);
   const [dayItems, setDayItems] = useState<DayExerciseItem[]>([]);
+  // Item 5: set when the full-library picker was opened to *replace* one of
+  // today's exercises (rather than add an extra one) — carries the
+  // substituted exercise's target through to the replacement, and marks the
+  // original skipped once a replacement is actually picked. Null means "no
+  // substitution in progress" (freestyle add, or the plain day-list pick).
+  const [substitutingFor, setSubstitutingFor] = useState<DayExerciseItem | null>(null);
   const flashTone = useFlashPreferenceStore((s) => s.tone);
   const recordSetCompletion = useInstrumentationStore((s) => s.recordSetCompletion);
   const router = useRouter();
@@ -233,6 +241,12 @@ function TransitionScreen({
     };
   }, [db, userId, sessionExerciseId, exerciseId, session.id]);
 
+  // Item 6: what a blank row (nothing committed, no ghost data at that
+  // index) starts at — the last real ghost set when history exists, or a
+  // flat 10kg/10 reps when it doesn't, instead of the old 0kg/8 reps that
+  // needed tapping through on every first-time exercise.
+  const fallback = useMemo(() => resolveFallbackSet(ghostSets), [ghostSets]);
+
   const mergedRows = useMemo<MergedRow[]>(() => {
     // setsDone (the live screen's tally) is taken literally when present:
     // exactly that many rows, ghost-prefilled where history covers them,
@@ -254,7 +268,7 @@ function TransitionScreen({
           parentIndex: parentIndex >= 0 ? parentIndex : null,
         });
       } else {
-        const ghost = ghostSets[i] ?? { weightKg: 0, reps: DEFAULT_BLANK_REPS, setType: 'working' as const, parentIndex: null };
+        const ghost = ghostSets[i] ?? { weightKg: fallback.weightKg, reps: fallback.reps, setType: 'working' as const, parentIndex: null };
         rows.push({
           rowIndex: i,
           isGhost: true,
@@ -266,7 +280,7 @@ function TransitionScreen({
       }
     }
     return rows;
-  }, [committedSets, ghostSets, setsDone]);
+  }, [committedSets, ghostSets, setsDone, fallback]);
 
   const displayOrder = useMemo(
     () => orderRowsForDisplay(mergedRows.map((r) => ({ index: r.rowIndex, parentIndex: r.parentIndex }))),
@@ -295,38 +309,57 @@ function TransitionScreen({
   }
 
   // Item 10: any row is directly editable, not just the next unconfirmed
-  // ghost in order. Invariant 1 still holds — the edit writes to SQLite the
-  // moment it happens — but writing row N before row N-1 exists would break
-  // the index-contiguity setRowOrdering/drop-set parent-linking rely on, so
-  // any ghost rows still ahead of targetIndex are silently committed first,
-  // using whatever values they currently show (ghost defaults if the user
-  // never touched them — the same values finalizeRemainingSets would use
-  // for an untouched row at exit time anyway).
-  async function commitThrough(targetIndex: number, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
-    if (!sessionExerciseId) return;
+  // ghost in order. Invariant 1 still holds — every write lands in SQLite
+  // the moment it happens — but writing row N before row N-1 exists would
+  // break the index-contiguity setRowOrdering/drop-set parent-linking rely
+  // on, so any ghost rows still ahead of the furthest patched index are
+  // silently committed first, using whatever values they currently show
+  // (ghost/fallback defaults if the user never touched them — the same
+  // values finalizeRemainingSets would use for an untouched row at exit
+  // time anyway). `patches` maps a row index to the fields that row should
+  // get on the way through; a row not in the map keeps its own current
+  // values. Shared by the single-row edit path (commitThrough) and item 6's
+  // "copy set 1 to all" (every row gets the same patch at once).
+  async function commitRowsThrough(maxIndex: number, patches: Map<number, { weightKg?: number; reps?: number; setType?: SetType }>) {
+    if (!sessionExerciseId) return committedSets;
     let local = committedSets;
-    for (let i = local.length; i <= targetIndex; i++) {
+    for (let i = 0; i <= maxIndex; i++) {
       const row = rowsByIndex.get(i);
-      if (!row) break;
-      const isTarget = i === targetIndex;
+      if (!row) continue;
+      const patch = patches.get(i);
+      if (i < local.length) {
+        if (!patch) continue;
+        const set = local[i];
+        const updated = await updateSet(db, userId, set.id, patch);
+        if (updated) local = local.map((s, idx) => (idx === i ? updated : s));
+        continue;
+      }
       const parentSetId = row.parentIndex != null ? (local[row.parentIndex]?.id ?? null) : null;
       const created = await createSet(db, {
         userId,
         sessionExerciseId,
         index: local.length,
-        weightKg: isTarget ? (patch.weightKg ?? row.weightKg) : row.weightKg,
-        reps: isTarget ? (patch.reps ?? row.reps) : row.reps,
-        setType: isTarget ? (patch.setType ?? row.setType) : row.setType,
+        weightKg: patch?.weightKg ?? row.weightKg,
+        reps: patch?.reps ?? row.reps,
+        setType: patch?.setType ?? row.setType,
         parentSetId,
         restAfterSeconds: null,
         completedAt: new Date(),
       });
       if (created) {
         local = [...local, created];
-        if (isTarget) recordSetCompletion(exercise?.name ?? '', created.index);
+        // Only rows an action actually targeted count as "completed" for
+        // instrumentation purposes — a ghost row silently caught up on the
+        // way to a later target never did before, and shouldn't start now.
+        if (patch) recordSetCompletion(exercise?.name ?? '', created.index);
       }
     }
     setCommittedSets(local);
+    return local;
+  }
+
+  async function commitThrough(targetIndex: number, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
+    await commitRowsThrough(targetIndex, new Map([[targetIndex, patch]]));
   }
 
   function applyValueToRow(row: MergedRow, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
@@ -339,6 +372,22 @@ function TransitionScreen({
     void updateSet(db, userId, set.id, patch).then((updated) => {
       if (updated) setCommittedSets((prev) => prev.map((s, i) => (i === row.rowIndex ? updated : s)));
     });
+  }
+
+  // Item 6: copies set 1's weight/reps onto every other top-level set in
+  // this exercise — committed or still-ghost rows alike — in one pass.
+  // Drop sets are left alone: they're deliberately a lighter follow-on
+  // weight, not a repeat of the top set.
+  async function handleCopySet1ToAll() {
+    const first = rowsByIndex.get(0);
+    if (!first || mergedRows.length < 2) return;
+    const patches = new Map<number, { weightKg: number; reps: number }>();
+    for (let i = 1; i < mergedRows.length; i++) {
+      const row = rowsByIndex.get(i);
+      if (!row || row.parentIndex != null) continue;
+      patches.set(i, { weightKg: first.weightKg, reps: first.reps });
+    }
+    await commitRowsThrough(mergedRows.length - 1, patches);
   }
 
   function handleWeightStep(row: MergedRow, direction: 1 | -1) {
@@ -377,7 +426,7 @@ function TransitionScreen({
 
   function handleAddSet() {
     const tail = committedSets[committedSets.length - 1] ?? ghostSets[ghostSets.length - 1];
-    void commitNewSet({ weightKg: tail?.weightKg ?? 0, reps: tail?.reps ?? 8, setType: 'working', parentSetId: null });
+    void commitNewSet({ weightKg: tail?.weightKg ?? fallback.weightKg, reps: tail?.reps ?? fallback.reps, setType: 'working', parentSetId: null });
   }
 
   function handleAddDropSet(row: MergedRow) {
@@ -389,30 +438,56 @@ function TransitionScreen({
 
   // Today's programme day, in the order the template specifies — an
   // exercise is "done" once it has at least one committed set logged this
-  // session, and is greyed out / untappable in that state.
+  // session (greyed out, untappable), or "substituted" once its
+  // session_exercise row is marked skipped without any sets (item 5 — grey,
+  // badged, but still tappable in case the machine frees up).
   async function loadDayItems() {
     if (!session.templateId) return;
-    const [templateExercises, detail] = await Promise.all([
+    const [templateExercises, existingSessionExercises, detail] = await Promise.all([
       listTemplateExercisesByTemplate(db, userId, session.templateId),
+      listSessionExercisesBySession(db, userId, session.id),
       getSessionDetail(db, userId, session.id),
     ]);
     const doneExerciseIds = new Set(detail.filter((d) => d.sets.length > 0).map((d) => d.exerciseId));
+    const substitutedExerciseIds = new Set(
+      existingSessionExercises.filter((se) => se.skippedAt != null).map((se) => se.exerciseId),
+    );
     const sorted = [...templateExercises].sort((a, b) => a.orderIndex - b.orderIndex);
     const items: DayExerciseItem[] = [];
     for (const te of sorted) {
       const ex = await getExerciseById(db, userId, te.exerciseId);
-      if (ex) items.push({ templateExerciseId: te.id, exercise: ex, done: doneExerciseIds.has(ex.id) });
+      if (ex) {
+        items.push({
+          templateExerciseId: te.id,
+          exercise: ex,
+          done: doneExerciseIds.has(ex.id),
+          substituted: substitutedExerciseIds.has(ex.id),
+          targetSets: te.targetSets,
+          targetRepsMin: te.targetRepsMin,
+          targetRepsMax: te.targetRepsMax,
+        });
+      }
     }
     setDayItems(items);
   }
 
   function openNextExercisePicker() {
+    setSubstitutingFor(null);
     if (session.templateId) {
       void loadDayItems();
       setDayPickerOpen(true);
     } else {
       setPickerOpen(true);
     }
+  }
+
+  // Item 5: nominate which of today's exercises is being replaced, then
+  // move to the full library for the actual replacement — no DB write yet,
+  // so backing out of the library (item 4) leaves nothing half-done.
+  function handleNominateSubstitute(item: DayExerciseItem) {
+    setDayPickerOpen(false);
+    setSubstitutingFor(item);
+    setPickerOpen(true);
   }
 
   async function handlePickNextExercise(picked: Exercise) {
@@ -427,10 +502,46 @@ function TransitionScreen({
         exerciseId: picked.id,
         orderIndex: existing.length,
       });
+    } else if (se.skippedAt != null) {
+      // Picking a previously-substituted-away exercise after all — back to normal.
+      se = await updateSessionExercise(db, userId, se.id, { skippedAt: null });
     }
     if (!se) return;
     void recordExerciseUsage(db, userId, picked.id);
-    router.replace({ pathname: '/session', params: { sessionExerciseId: se.id, exerciseId: picked.id } });
+
+    const substituted = substitutingFor;
+    setSubstitutingFor(null);
+
+    // Substituting an exercise for itself isn't a real substitution — don't
+    // mark the very exercise just picked as skipped.
+    if (substituted && substituted.exercise.id !== picked.id) {
+      const substitutedSe = existing.find((s) => s.exerciseId === substituted.exercise.id) ?? null;
+      if (!substitutedSe) {
+        await createSessionExercise(db, {
+          userId,
+          sessionId: session.id,
+          exerciseId: substituted.exercise.id,
+          orderIndex: existing.length + 1,
+          skippedAt: new Date(),
+        });
+      } else if (substitutedSe.skippedAt == null) {
+        await updateSessionExercise(db, userId, substitutedSe.id, { skippedAt: new Date() });
+      }
+    }
+
+    router.replace({
+      pathname: '/session',
+      params:
+        substituted && substituted.exercise.id !== picked.id
+          ? {
+              sessionExerciseId: se.id,
+              exerciseId: picked.id,
+              targetSets: String(substituted.targetSets),
+              targetRepsMin: String(substituted.targetRepsMin),
+              targetRepsMax: String(substituted.targetRepsMax),
+            }
+          : { sessionExerciseId: se.id, exerciseId: picked.id },
+    });
   }
 
   // Removal is scoped to the most-recently-committed set (undo-last) — an
@@ -610,6 +721,12 @@ function TransitionScreen({
                 <Text style={[type.label, styles.addSetLabel]}>{strings.transitionAddSetButton}</Text>
               </Pressable>
             ) : null}
+
+            {exercise && mergedRows.length >= 2 ? (
+              <Pressable style={styles.addSetTouch} onPress={() => void handleCopySet1ToAll()}>
+                <Text style={[type.label, styles.addSetLabel]}>{strings.transitionCopyFirstSetButton}</Text>
+              </Pressable>
+            ) : null}
           </ScrollView>
         )}
 
@@ -633,7 +750,9 @@ function TransitionScreen({
         visible={dayPickerOpen}
         items={dayItems}
         onSelect={(picked) => void handlePickNextExercise(picked)}
-        onAddInstead={() => {
+        onNominateSubstitute={handleNominateSubstitute}
+        onAddExtra={() => {
+          setSubstitutingFor(null);
           setDayPickerOpen(false);
           setPickerOpen(true);
         }}
@@ -644,7 +763,16 @@ function TransitionScreen({
         visible={pickerOpen}
         db={db}
         userId={userId}
-        onClose={() => setPickerOpen(false)}
+        onClose={() => {
+          // Item 4: back out of the library onto today's exercise list, not
+          // all the way to this exercise's logging rows — there's nothing to
+          // go back to on the recording page when the library was reached
+          // via the day picker in the first place. A freestyle session (no
+          // day picker in this flow) still just closes.
+          setPickerOpen(false);
+          setSubstitutingFor(null);
+          if (session.templateId) setDayPickerOpen(true);
+        }}
         onSelect={(picked) => void handlePickNextExercise(picked)}
       />
 

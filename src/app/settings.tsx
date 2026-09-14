@@ -33,9 +33,13 @@ export default function Settings() {
 
   const [flashIntervalSeconds, setFlashIntervalSeconds] = useState<number | null>(null);
   const [intervalKeypadOpen, setIntervalKeypadOpen] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
-    void getUser(db, userId).then((user) => setFlashIntervalSeconds(user?.restFlashIntervalSeconds ?? 30));
+    void getUser(db, userId).then((user) => {
+      setFlashIntervalSeconds(user?.restFlashIntervalSeconds ?? 30);
+      setNotificationsEnabled(user?.restNotificationEnabled ?? true);
+    });
   }, [db, userId]);
 
   function handleIntervalConfirm(value: number) {
@@ -47,6 +51,11 @@ export default function Settings() {
 
   function handleToggleFlashColour() {
     setFlashTone(flashTone === 'primary' ? 'secondary' : 'primary');
+  }
+
+  function handleToggleNotifications(next: boolean) {
+    setNotificationsEnabled(next);
+    void updateRestSettings(db, userId, { restNotificationEnabled: next });
   }
 
   return (
@@ -65,6 +74,14 @@ export default function Settings() {
         valueLabel={flashTone === 'primary' ? strings.settingsFlashColourYellow : strings.settingsFlashColourLime}
         onPress={handleToggleFlashColour}
       />
+      {notificationsEnabled != null ? (
+        <ListRow
+          variant="toggle"
+          label={strings.settingsNotificationLabel}
+          value={notificationsEnabled}
+          onValueChange={handleToggleNotifications}
+        />
+      ) : null}
 
       <ListRow variant="navigation" label={strings.settingsRowImport} onPress={() => router.push('/import')} />
       <ListRow variant="navigation" label={strings.settingsRowExport} onPress={() => router.push('/export')} />
