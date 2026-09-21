@@ -31,7 +31,8 @@ export interface ProgressPoint {
 // entries, so a session skipped for a stretch reads as a real gap within a
 // stable 30-day frame instead of the chart's date axis silently
 // contracting to whatever's actually there.
-export function filterLastNDays(entries: ProgressSessionEntry[], nowMs: number, days = 30): ProgressSessionEntry[] {
+// Generic so callers holding richer entries (e.g. with endedAt) keep their type.
+export function filterLastNDays<T extends ProgressSessionEntry>(entries: T[], nowMs: number, days = 30): T[] {
   const cutoff = nowMs - days * 24 * 60 * 60 * 1000;
   return entries.filter((e) => e.startedAt.getTime() >= cutoff && e.startedAt.getTime() <= nowMs);
 }

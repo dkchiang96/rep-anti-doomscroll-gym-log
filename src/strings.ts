@@ -173,7 +173,7 @@ export const strings = {
   programmesNamePlaceholder: 'Programme name',
   programmesEmpty: 'No programmes yet — create one or import a JSON programme.',
   programmesActiveBadge: 'ACTIVE',
-  programmesSetActiveButton: 'Set active',
+  programmesActiveToggleLabel: 'Active programme',
   programmeRenameButton: 'Rename programme',
   templateRenameButton: 'Rename day',
   programmesImportLink: 'Import programme JSON',
@@ -258,6 +258,8 @@ export const strings = {
   progressRange6m: '6M',
   progressRange1y: '1Y',
   progressRangeAll: 'ALL',
+  progressDeleteButton: 'Delete',
+  progressDeleteArmedButton: 'Tap again to delete whole workout',
 
   homeExportLink: 'Export data',
   exportTitle: 'Export',

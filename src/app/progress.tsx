@@ -1,11 +1,12 @@
 import { Stack } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ProgressChart } from '@/components/progress/ProgressChart';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { listExercises } from '@/data/repositories/exerciseRepository';
 import { listSessionHistoryForExercise, type ProgressSessionEntry } from '@/data/repositories/progressRepository';
+import { softDeleteSessionCascade } from '@/data/repositories/sessionRepository';
 import type { exercise as exerciseTable } from '@/data/schema';
 import { buildProgressPoints, filterLastNDays } from '@/domain/progressChart';
 import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
@@ -51,6 +52,31 @@ export default function Progress() {
   // useStopwatch) for the React Compiler's purity rule.
   const [nowMs, setNowMs] = useState<number | null>(null);
 
+  // Deleting a wrongly recorded workout removes the whole session (every
+  // exercise in it), so it's tap-to-confirm rather than a modal: the first tap
+  // arms that row, the second deletes, and it disarms itself after a few
+  // seconds — same pattern as the live screen's end-session control.
+  const [armedSessionId, setArmedSessionId] = useState<string | null>(null);
+  const disarmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  useEffect(() => {
+    return () => {
+      if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+    };
+  }, []);
+
+  async function handleDeletePress(sessionId: string) {
+    if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
+    if (armedSessionId !== sessionId) {
+      setArmedSessionId(sessionId);
+      disarmTimeoutRef.current = setTimeout(() => setArmedSessionId(null), 4000);
+      return;
+    }
+    setArmedSessionId(null);
+    await softDeleteSessionCascade(db, userId, sessionId);
+    setReloadKey((n) => n + 1);
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -85,7 +111,7 @@ export default function Progress() {
     return () => {
       cancelled = true;
     };
-  }, [db, userId, groupExercises]);
+  }, [db, userId, groupExercises, reloadKey]);
 
   function handlePickChip(next: MuscleGroupChip) {
     setChip((prev) => (prev === next ? null : next));
@@ -144,9 +170,18 @@ export default function Progress() {
                     <ProgressChart points={points} />
                     <Text style={[type.caption, styles.sectionHeading]}>{strings.progressTableHeading(range.label)}</Text>
                     {tableRows.map((entry) => (
-                      <Text key={entry.sessionId} style={[type.body, styles.tableRow]}>
-                        {formatEntryDate(entry.startedAt)} — {formatSessionExerciseShorthand(entry.sets, isBodyweight) || '—'}
-                      </Text>
+                      <View key={entry.sessionId} style={styles.tableRowWrap}>
+                        <Text style={[type.body, styles.tableRowText]}>
+                          {formatEntryDate(entry.startedAt)} — {formatSessionExerciseShorthand(entry.sets, isBodyweight) || '—'}
+                        </Text>
+                        {entry.endedAt != null ? (
+                          <Pressable onPress={() => void handleDeletePress(entry.sessionId)} style={styles.deleteTouch}>
+                            <Text style={[type.caption, armedSessionId === entry.sessionId ? styles.deleteLabelArmed : styles.deleteLabel]}>
+                              {armedSessionId === entry.sessionId ? strings.progressDeleteArmedButton : strings.progressDeleteButton}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
                     ))}
                   </>
                 ) : (
@@ -219,10 +254,31 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-  tableRow: {
-    color: color.textPrimary,
+  tableRowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: size.listRowPadding,
+  },
+  tableRowText: {
+    color: color.textPrimary,
+    flex: 1,
     paddingVertical: 6,
+  },
+  deleteTouch: {
+    minHeight: size.minTouchTarget,
+    minWidth: size.minTouchTarget,
+    maxWidth: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 12,
+  },
+  deleteLabel: {
+    color: color.textMuted,
+  },
+  // §2's danger token is reserved for destructive confirmations.
+  deleteLabelArmed: {
+    color: color.danger,
+    textAlign: 'center',
   },
   emptyText: {
     color: color.textMuted,

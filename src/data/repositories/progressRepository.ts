@@ -6,6 +6,9 @@ import type { AppDatabase } from '../types';
 export interface ProgressSessionEntry {
   sessionId: string;
   startedAt: Date;
+  // Null while the session is still in progress — the Progress screen only
+  // offers delete for a finished one.
+  endedAt: Date | null;
   sets: {
     weightKg: number;
     reps: number;
@@ -26,6 +29,7 @@ export async function listSessionHistoryForExercise(
     .select({
       sessionId: session.id,
       startedAt: session.startedAt,
+      endedAt: session.endedAt,
       index: setEntry.index,
       weightKg: setEntry.weightKg,
       reps: setEntry.reps,
@@ -49,7 +53,7 @@ export async function listSessionHistoryForExercise(
   for (const row of rows) {
     let entry = bySession.get(row.sessionId);
     if (!entry) {
-      entry = { sessionId: row.sessionId, startedAt: row.startedAt, sets: [] };
+      entry = { sessionId: row.sessionId, startedAt: row.startedAt, endedAt: row.endedAt, sets: [] };
       bySession.set(row.sessionId, entry);
     }
     entry.sets.push({ weightKg: row.weightKg, reps: row.reps, setType: row.setType });

@@ -31,7 +31,14 @@ export async function getActiveProgramme(db: AppDatabase, userId: string) {
   const rows = await db
     .select()
     .from(programme)
-    .where(and(eq(programme.userId, userId), eq(programme.isActive, true), isNull(programme.deletedAt)))
+    .where(
+      and(
+        eq(programme.userId, userId),
+        eq(programme.isActive, true),
+        eq(programme.isArchived, false),
+        isNull(programme.deletedAt),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
@@ -63,11 +70,14 @@ export async function setActiveProgramme(db: AppDatabase, userId: string, id: st
   return getProgrammeById(db, userId, id);
 }
 
+// An archived programme can't stay active (Home would keep offering its days),
+// so archiving also clears the active flag. Restoring it later does not make it
+// active again — that's an explicit choice on the Programmes screen.
 export async function archiveProgramme(db: AppDatabase, userId: string, id: string) {
   const now = new Date();
   await db
     .update(programme)
-    .set({ isArchived: true, archivedAt: now, updatedAt: now })
+    .set({ isArchived: true, isActive: false, archivedAt: now, updatedAt: now })
     .where(and(eq(programme.id, id), eq(programme.userId, userId)));
 }
 

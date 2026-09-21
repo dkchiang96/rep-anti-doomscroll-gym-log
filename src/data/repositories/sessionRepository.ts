@@ -1,7 +1,7 @@
-import { and, desc, eq, gte, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
 
 import { newId } from '../id';
-import { session } from '../schema';
+import { session, sessionExercise, setEntry } from '../schema';
 import type { AppDatabase } from '../types';
 
 export type NewSession = Omit<
@@ -78,4 +78,35 @@ export async function softDeleteSession(db: AppDatabase, userId: string, id: str
     .update(session)
     .set({ deletedAt: now, updatedAt: now })
     .where(and(eq(session.id, id), eq(session.userId, userId)));
+}
+
+// Deletes a finished workout: the session and, so nothing derived from it
+// (weight-step inference, ghost pre-fill) can still see them, its exercises
+// and sets — all soft (invariant 5). Refuses a session still in progress
+// (returns false) so a running workout can't be deleted out from under the
+// live screen. Sets go first and the session last, so a failure part-way
+// leaves the session visible and the delete can simply be retried.
+export async function softDeleteSessionCascade(db: AppDatabase, userId: string, id: string): Promise<boolean> {
+  const existing = await getSessionById(db, userId, id);
+  if (!existing || existing.endedAt == null) return false;
+
+  const now = new Date();
+  const exercises = await db
+    .select({ id: sessionExercise.id })
+    .from(sessionExercise)
+    .where(and(eq(sessionExercise.sessionId, id), eq(sessionExercise.userId, userId)));
+  const exerciseIds = exercises.map((e) => e.id);
+
+  if (exerciseIds.length > 0) {
+    await db
+      .update(setEntry)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(setEntry.userId, userId), inArray(setEntry.sessionExerciseId, exerciseIds), isNull(setEntry.deletedAt)));
+    await db
+      .update(sessionExercise)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(sessionExercise.userId, userId), inArray(sessionExercise.id, exerciseIds), isNull(sessionExercise.deletedAt)));
+  }
+  await softDeleteSession(db, userId, id);
+  return true;
 }

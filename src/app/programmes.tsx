@@ -1,5 +1,5 @@
-import { Stack, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ExercisePicker } from '@/components/exercise/ExercisePicker';
@@ -66,6 +66,7 @@ export default function Programmes() {
     return {
       programmes: all.filter((p) => !p.isArchived),
       standaloneTemplates: standalone.filter((t) => !t.isArchived && t.programmeId == null),
+      allTemplates: standalone,
     };
   }
 
@@ -75,19 +76,35 @@ export default function Programmes() {
     setStandaloneTemplates(result.standaloneTemplates);
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const result = await fetchProgrammes();
-      if (cancelled) return;
-      setProgrammes(result.programmes);
-      setStandaloneTemplates(result.standaloneTemplates);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, userId]);
+  // This screen stays mounted under the Archive screen, so a mount-only load
+  // left archived programmes/days showing (and an archived programme still
+  // marked active) after coming back. Reloads on every focus, including any
+  // template lists already fetched for an expanded programme.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const result = await fetchProgrammes();
+        if (cancelled) return;
+        setProgrammes(result.programmes);
+        setStandaloneTemplates(result.standaloneTemplates);
+        setTemplatesByProgramme((prev) =>
+          Object.fromEntries(
+            Object.keys(prev).map((programmeId) => [
+              programmeId,
+              result.allTemplates
+                .filter((t) => t.programmeId === programmeId && !t.isArchived)
+                .sort((a, b) => a.orderIndex - b.orderIndex),
+            ]),
+          ),
+        );
+      })();
+      return () => {
+        cancelled = true;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [db, userId]),
+  );
 
   async function handleCreateProgramme() {
     const name = newProgrammeName.trim();
@@ -320,6 +337,17 @@ export default function Programmes() {
             subLabel={programme.isActive ? strings.programmesActiveBadge : undefined}
             onPress={() => void toggleProgrammeExpanded(programme.id)}
           />
+          {/* Always visible (not buried in the expanded panel). Only ever
+              switches a programme on — exactly one is active at a time
+              (FR-5.2), so switching another one on is what turns this off. */}
+          <ListRow
+            variant="toggle"
+            label={strings.programmesActiveToggleLabel}
+            value={programme.isActive}
+            onValueChange={(next) => {
+              if (next && !programme.isActive) void handleSetActive(programme.id);
+            }}
+          />
           {expandedProgrammeId === programme.id ? (
             <View style={styles.expandedPanel}>
               {editingProgrammeId === programme.id ? (
@@ -344,12 +372,6 @@ export default function Programmes() {
                   <Text style={[type.label, styles.secondaryLabel]}>{strings.programmeRenameButton}</Text>
                 </Pressable>
               )}
-
-              {!programme.isActive ? (
-                <Pressable onPress={() => void handleSetActive(programme.id)} style={styles.secondaryTouch}>
-                  <Text style={[type.label, styles.secondaryLabel]}>{strings.programmesSetActiveButton}</Text>
-                </Pressable>
-              ) : null}
 
               <Text style={[type.caption, styles.sectionHeading]}>{strings.programmeDetailTemplatesHeading}</Text>
               {(templatesByProgramme[programme.id] ?? []).length === 0 ? (

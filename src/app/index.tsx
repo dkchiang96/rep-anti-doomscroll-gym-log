@@ -1,5 +1,5 @@
-import { Redirect, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Redirect, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,25 +31,31 @@ export default function Home() {
   const [state, setState] = useState<LoadState>({ status: 'checkingSession' });
   const [starting, setStarting] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      // FR-1.2 restore: an in-progress session under 6 hours old opens
-      // straight into the live screen, before any template UI paints.
-      const active = await getActiveSession(db, userId);
-      if (active) {
-        if (!cancelled) setState({ status: 'hasActiveSession' });
-        return;
-      }
+  // Home stays mounted underneath the screens pushed over it (Programmes,
+  // Archive...), so a mount-only load left it showing a stale programme after
+  // one was archived or switched. Reloading on every focus keeps it current;
+  // the previous state stays on screen meanwhile, so there's no flicker.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        // FR-1.2 restore: an in-progress session under 6 hours old opens
+        // straight into the live screen, before any template UI paints.
+        const active = await getActiveSession(db, userId);
+        if (active) {
+          if (!cancelled) setState({ status: 'hasActiveSession' });
+          return;
+        }
 
-      const programme = await getActiveProgramme(db, userId);
-      const templates = programme ? await listTemplatesForProgramme(db, userId, programme.id) : [];
-      if (!cancelled) setState({ status: 'ready', programme, templates });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [db, userId]);
+        const programme = await getActiveProgramme(db, userId);
+        const templates = programme ? await listTemplatesForProgramme(db, userId, programme.id) : [];
+        if (!cancelled) setState({ status: 'ready', programme, templates });
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [db, userId]),
+  );
 
   if (state.status === 'hasActiveSession') {
     return <Redirect href="/session" />;
