@@ -1,4 +1,4 @@
-import { computeElapsedMs, didCrossInterval } from '../stopwatch';
+import { computeElapsedMs, didCrossInterval, upcomingIntervalBoundaries } from '../stopwatch';
 
 describe('computeElapsedMs', () => {
   it('returns 0 when the clock has never been started', () => {
@@ -50,5 +50,26 @@ describe('didCrossInterval', () => {
 
   it('is false when elapsed goes backward (e.g. a reset)', () => {
     expect(didCrossInterval(45_000, 0, THIRTY_S)).toBe(false);
+  });
+});
+
+describe('upcomingIntervalBoundaries', () => {
+  it('lists the next boundaries of elapsed time within the horizon', () => {
+    // Started at t=0, now 40s in, 30s interval, 100s horizon: boundaries at 60s, 90s, 120s (all <= 140s).
+    expect(upcomingIntervalBoundaries(0, 0, 40_000, 30_000, 100_000)).toEqual([60_000, 90_000, 120_000]);
+  });
+
+  it('shifts boundaries by accumulated pause time', () => {
+    // 10s of pause: elapsed at now=50s is 40s, so the next boundary (60s elapsed) is at wall-clock 70s.
+    expect(upcomingIntervalBoundaries(0, 10_000, 50_000, 30_000, 45_000)).toEqual([70_000]);
+  });
+
+  it('skips a boundary that is exactly now', () => {
+    expect(upcomingIntervalBoundaries(0, 0, 30_000, 30_000, 30_000)).toEqual([60_000]);
+  });
+
+  it('is empty for a zero horizon or interval', () => {
+    expect(upcomingIntervalBoundaries(0, 0, 40_000, 30_000, 0)).toEqual([]);
+    expect(upcomingIntervalBoundaries(0, 0, 40_000, 0, 60_000)).toEqual([]);
   });
 });

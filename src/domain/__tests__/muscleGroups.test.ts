@@ -8,6 +8,13 @@ describe('resolveMuscleGroupChip', () => {
     }
   });
 
+  it('includes separate Forearms and Neck groups', () => {
+    expect(MUSCLE_GROUPS).toContain('Forearms');
+    expect(MUSCLE_GROUPS).toContain('Neck');
+    expect(resolveMuscleGroupChip('forearms')).toBe('Forearms');
+    expect(resolveMuscleGroupChip('NECK')).toBe('Neck');
+  });
+
   it('maps the four legacy per-leg-muscle names onto the combined Legs chip', () => {
     expect(resolveMuscleGroupChip('Quads')).toBe('Legs');
     expect(resolveMuscleGroupChip('hamstrings')).toBe('Legs');

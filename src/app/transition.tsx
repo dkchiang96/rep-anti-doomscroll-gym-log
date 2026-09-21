@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Clock, FlashOverlay, SetInputRow, Slab, TransportButton, useRestNotifications } from '@/components/ui';
+import { cancelRestNotifications, Clock, FlashOverlay, SetInputRow, Slab, TransportButton, useRestNotifications } from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
 import { NumericKeypad } from '@/components/transition/NumericKeypad';
 import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
@@ -81,7 +81,7 @@ function round2(value: number): number {
 export default function Transition() {
   const { db, userId } = useDatabase();
   const router = useRouter();
-  const params = useLocalSearchParams<{ sessionExerciseId?: string; exerciseId?: string; setsDone?: string }>();
+  const params = useLocalSearchParams<{ sessionExerciseId?: string; exerciseId?: string; setsDone?: string; openPicker?: string }>();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
@@ -121,6 +121,7 @@ export default function Transition() {
       sessionExerciseId={sessionExerciseId}
       exerciseId={exerciseId}
       setsDone={setsDone}
+      openPickerOnMount={params.openPicker === '1'}
     />
   );
 }
@@ -132,6 +133,7 @@ function TransitionScreen({
   sessionExerciseId,
   exerciseId,
   setsDone,
+  openPickerOnMount,
 }: {
   db: AppDatabase;
   userId: string;
@@ -144,6 +146,10 @@ function TransitionScreen({
   // Null falls back to the old open-ended ghost-prefill behaviour; a real
   // number (0 included) is taken literally as "show exactly this many rows."
   setsDone: number | null;
+  // Set when the timer screen's back gesture sends you here: the choose-
+  // exercise screen opens straight away (there's no current exercise on this
+  // screen in that case), and closing it goes back to the timer.
+  openPickerOnMount: boolean;
 }) {
   const { session, flashIntervalMs, notificationsEnabled } = state;
   useAttachStopwatch(db, userId, session);
@@ -174,12 +180,12 @@ function TransitionScreen({
   const [weightStep, setWeightStep] = useState(DEFAULT_WEIGHT_STEP_KG);
   const [loaded, setLoaded] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<{ rowIndex: number; field: 'weight' | 'reps' } | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(openPickerOnMount && !session.templateId);
   // A templated session offers today's programme day (in sequence, done
   // exercises greyed out) before falling back to the full library — the
   // full ExercisePicker (pickerOpen above) stays reachable via either of the
   // day picker's two footer routes (substitute or add extra).
-  const [dayPickerOpen, setDayPickerOpen] = useState(false);
+  const [dayPickerOpen, setDayPickerOpen] = useState(openPickerOnMount && !!session.templateId);
   const [dayItems, setDayItems] = useState<DayExerciseItem[]>([]);
   // Item 5: set when the full-library picker was opened to *replace* one of
   // today's exercises (rather than add an extra one) — carries the
@@ -210,6 +216,12 @@ function TransitionScreen({
   // exercise in the whole session, fetched fresh right before ending.
   const [recapMode, setRecapMode] = useState<'exercise' | 'end' | null>(null);
   const [recapSections, setRecapSections] = useState<RecapSection[]>([]);
+  // Once the exercise's recap has been confirmed, NEXT EXERCISE goes straight
+  // to the picker instead of asking again (e.g. after backing out of the
+  // picker). Remembered as the committed-sets array that was confirmed, so any
+  // later edit — which always produces a new array — invalidates it and the
+  // recap comes back for the changed log.
+  const [recapConfirmedFor, setRecapConfirmedFor] = useState<CommittedSet[] | null>(null);
 
   useEffect(() => {
     // Nothing to load without a current exercise — the render below checks
@@ -471,6 +483,14 @@ function TransitionScreen({
     setDayItems(items);
   }
 
+  useEffect(() => {
+    // Deferred a tick so the day list loads through the same async path as any
+    // other fetch, rather than setting state synchronously in the effect body.
+    if (openPickerOnMount && session.templateId) void Promise.resolve().then(loadDayItems);
+    // Mount-only: the picker's initial visibility is decided in useState above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function openNextExercisePicker() {
     setSubstitutingFor(null);
     if (session.templateId) {
@@ -529,7 +549,10 @@ function TransitionScreen({
       }
     }
 
-    router.replace({
+    // dismissTo reuses the timer screen already in the stack (popping this
+    // one) rather than stacking a new timer on top, so back never lands on a
+    // stale timer or logging screen for an earlier exercise.
+    router.dismissTo({
       pathname: '/session',
       params:
         substituted && substituted.exercise.id !== picked.id
@@ -615,7 +638,7 @@ function TransitionScreen({
     // up" state with no exercise picked) — there's nothing to recap, so go
     // straight to picking the next exercise instead of showing an empty
     // confirmation screen.
-    if (!sessionExerciseId || !exerciseId || !exercise) {
+    if (!sessionExerciseId || !exerciseId || !exercise || recapConfirmedFor === committedSets) {
       openNextExercisePicker();
       return;
     }
@@ -629,7 +652,17 @@ function TransitionScreen({
     setRecapMode('exercise');
   }
 
+  // Warm down: the timed session continues, but with no exercise — the timer
+  // screen opens in its WARM DOWN state and the workout is ended from there.
+  function handleWarmDown() {
+    setPickerOpen(false);
+    setDayPickerOpen(false);
+    setSubstitutingFor(null);
+    router.dismissTo({ pathname: '/session', params: { warmDown: '1' } });
+  }
+
   async function finishSession() {
+    void cancelRestNotifications();
     await endSession(db, userId, session.id);
     // Backup failure must never block ending the session — same guarantee
     // session.tsx's own end-session control makes.
@@ -645,7 +678,10 @@ function TransitionScreen({
     const mode = recapMode;
     setRecapMode(null);
     if (mode === 'end') void finishSession();
-    else if (mode === 'exercise') openNextExercisePicker();
+    else if (mode === 'exercise') {
+      setRecapConfirmedFor(committedSets);
+      openNextExercisePicker();
+    }
   }
 
   function handleRecapBack() {
@@ -756,7 +792,13 @@ function TransitionScreen({
           setDayPickerOpen(false);
           setPickerOpen(true);
         }}
-        onClose={() => setDayPickerOpen(false)}
+        onWarmDown={handleWarmDown}
+        onClose={() => {
+          setDayPickerOpen(false);
+          // Arrived from the timer's back gesture: there's no exercise here to
+          // fall back to, so closing returns to that timer.
+          if (openPickerOnMount && !exercise) router.back();
+        }}
       />
 
       <ExercisePicker
@@ -772,7 +814,9 @@ function TransitionScreen({
           setPickerOpen(false);
           setSubstitutingFor(null);
           if (session.templateId) setDayPickerOpen(true);
+          else if (openPickerOnMount && !exercise) router.back();
         }}
+        onWarmDown={!session.templateId && !substitutingFor ? handleWarmDown : undefined}
         onSelect={(picked) => void handlePickNextExercise(picked)}
       />
 

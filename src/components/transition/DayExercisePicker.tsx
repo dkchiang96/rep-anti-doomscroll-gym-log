@@ -38,10 +38,11 @@ type DayExercisePickerProps = {
   onSelect: (exercise: Exercise) => void;
   onNominateSubstitute: (item: DayExerciseItem) => void;
   onAddExtra: () => void;
+  onWarmDown: () => void;
   onClose: () => void;
 };
 
-export function DayExercisePicker({ visible, items, onSelect, onNominateSubstitute, onAddExtra, onClose }: DayExercisePickerProps) {
+export function DayExercisePicker({ visible, items, onSelect, onNominateSubstitute, onAddExtra, onWarmDown, onClose }: DayExercisePickerProps) {
   const [mode, setMode] = useState<PickerMode>('select');
   // Reset to the top-level footer every time the sheet opens — done during
   // render (React's documented "adjusting state when a prop changes"
@@ -96,12 +97,17 @@ export function DayExercisePicker({ visible, items, onSelect, onNominateSubstitu
         </ScrollView>
 
         {mode === 'select' ? (
-          <View style={styles.footer}>
-            <Pressable onPress={() => setMode('substitute')} style={styles.footerTouch}>
-              <Text style={[type.label, styles.footerLabel]}>{strings.dayPickerSubstituteButton}</Text>
-            </Pressable>
-            <Pressable onPress={onAddExtra} style={styles.footerTouch}>
-              <Text style={[type.label, styles.footerLabel]}>{strings.dayPickerAddExtraButton}</Text>
+          <View>
+            <View style={styles.footer}>
+              <Pressable onPress={() => setMode('substitute')} style={styles.footerTouch}>
+                <Text style={[type.label, styles.footerLabel]}>{strings.dayPickerSubstituteButton}</Text>
+              </Pressable>
+              <Pressable onPress={onAddExtra} style={styles.footerTouch}>
+                <Text style={[type.label, styles.footerLabel]}>{strings.dayPickerAddExtraButton}</Text>
+              </Pressable>
+            </View>
+            <Pressable onPress={onWarmDown} style={styles.footerTouch}>
+              <Text style={[type.label, styles.footerLabel]}>{strings.dayPickerWarmDownButton}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -186,7 +192,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   footerTouch: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 0,
     minHeight: size.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',

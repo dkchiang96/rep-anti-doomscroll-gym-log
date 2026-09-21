@@ -41,6 +41,9 @@ export const strings = {
   sessionNoExerciseLabel: 'Warm up',
   sessionNoTargetLabel: 'No target',
   sessionSetsDoneLabel: 'Sets done',
+  sessionWarmDownLabel: 'Warm down',
+  sessionWarmDownHint: 'Cool down, then end your workout',
+  sessionWarmDownEndLabel: 'End workout',
   sessionRecentRoundsHeading: 'Last 3 rounds',
   sessionTransportStartLabel: 'Start',
   sessionTransportPauseLabel: 'Pause',
@@ -67,6 +70,7 @@ export const strings = {
   dayPickerEmpty: 'No exercises in this day.',
   dayPickerSubstituteButton: 'Substitute an exercise',
   dayPickerAddExtraButton: '+ Add extra exercise',
+  dayPickerWarmDownButton: 'Warm down',
   dayPickerCancelButton: 'Cancel',
 
   importTitle: 'Import Keep history',

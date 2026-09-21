@@ -37,9 +37,12 @@ type ExercisePickerProps = {
   userId: string;
   onClose: () => void;
   onSelect: (exercise: Exercise) => void;
+  // Optional: only the mid-session picker (transition.tsx, freestyle) offers
+  // warm down; the programme editor's use of this picker never passes it.
+  onWarmDown?: () => void;
 };
 
-export function ExercisePicker({ visible, db, userId, onClose, onSelect }: ExercisePickerProps) {
+export function ExercisePicker({ visible, db, userId, onClose, onSelect, onWarmDown }: ExercisePickerProps) {
   const [library, setLibrary] = useState<Exercise[]>([]);
   const [chip, setChip] = useState<MuscleGroupChip | null>(null);
   const [query, setQuery] = useState('');
@@ -149,9 +152,16 @@ export function ExercisePicker({ visible, db, userId, onClose, onSelect }: Exerc
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <Text style={[type.heading, styles.headerTitle]}>{strings.addExerciseTitle}</Text>
-          <Pressable onPress={onClose} style={styles.closeTouch}>
-            <Text style={[type.label, styles.closeLabel]}>{strings.addExerciseClose}</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            {onWarmDown ? (
+              <Pressable onPress={onWarmDown} style={styles.closeTouch}>
+                <Text style={[type.label, styles.closeLabel]}>{strings.dayPickerWarmDownButton}</Text>
+              </Pressable>
+            ) : null}
+            <Pressable onPress={onClose} style={styles.closeTouch}>
+              <Text style={[type.label, styles.closeLabel]}>{strings.addExerciseClose}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <TextInput
@@ -297,6 +307,10 @@ const styles = StyleSheet.create({
     height: size.topBar,
     paddingHorizontal: size.listRowPadding,
     backgroundColor: color.bar,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerTitle: {
     color: color.textPrimary,

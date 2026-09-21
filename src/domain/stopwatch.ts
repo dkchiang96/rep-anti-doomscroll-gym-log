@@ -20,3 +20,28 @@ export function computeElapsedMs(startedAt: number | null, accumulatedPauseMs: n
 export function didCrossInterval(previousElapsedMs: number, nextElapsedMs: number, intervalMs: number): boolean {
   return Math.floor(nextElapsedMs / intervalMs) > Math.floor(previousElapsedMs / intervalMs);
 }
+
+// Wall-clock times (ms since epoch) at which the running clock will next
+// cross an `intervalMs` boundary of elapsed time, capped at `horizonMs` ahead
+// of `nowMs`. Used to schedule finite, one-shot background reminders that line
+// up with the on-screen flash instead of an open-ended repeating one. Assumes
+// the clock keeps running (no pause) over the horizon — the caller cancels the
+// batch the moment that stops being true.
+export function upcomingIntervalBoundaries(
+  startedAt: number,
+  accumulatedPauseMs: number,
+  nowMs: number,
+  intervalMs: number,
+  horizonMs: number,
+): number[] {
+  if (intervalMs <= 0 || horizonMs <= 0) return [];
+  const elapsed = computeElapsedMs(startedAt, accumulatedPauseMs, nowMs);
+  const runStart = startedAt + accumulatedPauseMs;
+  const times: number[] = [];
+  for (let k = Math.floor(elapsed / intervalMs) + 1; ; k++) {
+    const at = runStart + k * intervalMs;
+    if (at - nowMs > horizonMs) break;
+    times.push(at);
+  }
+  return times;
+}

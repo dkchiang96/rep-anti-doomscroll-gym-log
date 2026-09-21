@@ -1,10 +1,10 @@
 import { useKeepAwake } from 'expo-keep-awake';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Clock, FlashOverlay, Slab, TransportButton, TransportResetButton, useRestNotifications } from '@/components/ui';
+import { cancelRestNotifications, Clock, FlashOverlay, Slab, TransportButton, TransportResetButton, useRestNotifications } from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
 import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
 import { runBackupRetention } from '@/data/backup';
@@ -87,7 +87,11 @@ export default function LiveSession() {
     targetSets?: string;
     targetRepsMin?: string;
     targetRepsMax?: string;
+    warmDown?: string;
   }>();
+  // Warm down: the timed session continues past the last exercise with no
+  // exercise selected — see LiveSessionScreen's warm-down handling.
+  const warmDown = params.warmDown === '1';
   const pickedSessionExerciseId = typeof params.sessionExerciseId === 'string' ? params.sessionExerciseId : null;
   const pickedExerciseId = typeof params.exerciseId === 'string' ? params.exerciseId : null;
   // Item 5: a substituted-in exercise carries its replaced exercise's target
@@ -195,18 +199,20 @@ export default function LiveSession() {
     });
   };
 
-  return <LiveSessionScreen db={db} userId={userId} state={state} onNextExercise={goToTransition} />;
+  return <LiveSessionScreen db={db} userId={userId} state={state} warmDown={warmDown} onNextExercise={goToTransition} />;
 }
 
 function LiveSessionScreen({
   db,
   userId,
   state,
+  warmDown,
   onNextExercise,
 }: {
   db: ReturnType<typeof useDatabase>['db'];
   userId: string;
   state: Extract<LoadState, { status: 'ready' }>;
+  warmDown: boolean;
   onNextExercise: (setsDone: number) => void;
 }) {
   const { session, title, exercise, flashIntervalMs, notificationsEnabled } = state;
@@ -271,25 +277,52 @@ function LiveSessionScreen({
     disarmTimeoutRef.current = setTimeout(() => setEndArmed(false), 4000);
   }
 
+  async function openEndRecap() {
+    const detail = await getSessionDetail(db, userId, session.id);
+    setRecapSections(
+      detail.map((ex) => ({
+        name: ex.exerciseName,
+        shorthand: formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—',
+      })),
+    );
+    setRecapOpen(true);
+  }
+
   async function handleNextExercisePress() {
     if (endArmed) {
       if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
       setEndArmed(false);
-      const detail = await getSessionDetail(db, userId, session.id);
-      setRecapSections(
-        detail.map((ex) => ({
-          name: ex.exerciseName,
-          shorthand: formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—',
-        })),
-      );
-      setRecapOpen(true);
+      await openEndRecap();
+      return;
+    }
+    // Warm down is the last leg of a workout, so the bottom slab is the end
+    // control here rather than "next exercise" (still behind the same
+    // blocking recap).
+    if (warmDown) {
+      await openEndRecap();
       return;
     }
     onNextExercise(setsDone);
   }
 
+  // Back from a timer that has an exercise (or is in warm down) goes to the
+  // choose-exercise screen with its picker open, not to whichever logging or
+  // timer screen came before. The warm-up state (no exercise yet) keeps the
+  // default back behaviour.
+  useFocusEffect(
+    useCallback(() => {
+      if (!exercise && !warmDown) return undefined;
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        router.push({ pathname: '/transition', params: { openPicker: '1' } });
+        return true;
+      });
+      return () => subscription.remove();
+    }, [exercise, warmDown, router]),
+  );
+
   async function handleRecapConfirm() {
     setRecapOpen(false);
+    void cancelRestNotifications();
     await endSession(db, userId, session.id);
     // Backup failure must never block ending the session — same try/catch
     // the pre-rebuild build wrapped this call in.
@@ -326,7 +359,7 @@ function LiveSessionScreen({
   // Distinct from the top bar's session-level title (which legitimately
   // reads FREESTYLE for a templateless session) — reusing the same word here
   // for "no exercise picked yet" read as a duplicated/broken label.
-  const exerciseName = (exercise?.name ?? strings.sessionNoExerciseLabel).toUpperCase();
+  const exerciseName = (warmDown ? strings.sessionWarmDownLabel : (exercise?.name ?? strings.sessionNoExerciseLabel)).toUpperCase();
 
   return (
     // FlashOverlay is a sibling of this outer, edge-to-edge View (not nested
@@ -349,7 +382,9 @@ function LiveSessionScreen({
         </Slab>
 
         <Slab tone="secondary" flex={liveZoneFlex.lime}>
-          {exercise?.target ? (
+          {warmDown ? (
+            <Text style={[type.label, styles.onSlabText]}>{strings.sessionWarmDownHint.toUpperCase()}</Text>
+          ) : exercise?.target ? (
             <>
               <Text style={[type.label, styles.onSlabText]}>{strings.sessionTargetHeading}</Text>
               <Text style={[type.display1, styles.onSlabText]}>
@@ -377,15 +412,17 @@ function LiveSessionScreen({
         ) : null}
 
         <View style={[styles.canvas, { flex: liveZoneFlex.canvas }]}>
-          <Pressable
-            style={styles.setsDoneTouch}
-            onPress={() => setSetsDone((n) => n + 1)}
-            onLongPress={() => setSetsDone((n) => Math.max(0, n - 1))}
-            delayLongPress={600}
-          >
-            <Text style={[type.display1, tabularNums, styles.setsDoneNumeral]}>{setsDone}</Text>
-            <Text style={[type.caption, styles.setsDoneLabel]}>{strings.sessionSetsDoneLabel}</Text>
-          </Pressable>
+          {warmDown ? null : (
+            <Pressable
+              style={styles.setsDoneTouch}
+              onPress={() => setSetsDone((n) => n + 1)}
+              onLongPress={() => setSetsDone((n) => Math.max(0, n - 1))}
+              delayLongPress={600}
+            >
+              <Text style={[type.display1, tabularNums, styles.setsDoneNumeral]}>{setsDone}</Text>
+              <Text style={[type.caption, styles.setsDoneLabel]}>{strings.sessionSetsDoneLabel}</Text>
+            </Pressable>
+          )}
 
           <View style={styles.transportGroup}>
             <TransportResetButton onLongPress={stopwatch.reset} />
@@ -400,12 +437,16 @@ function LiveSessionScreen({
         <Pressable
           style={styles.nextExerciseTouch}
           onPress={() => void handleNextExercisePress()}
-          onLongPress={armEndConfirm}
+          onLongPress={warmDown ? undefined : armEndConfirm}
           delayLongPress={600}
         >
           <Slab tone="primary" height={size.bottomSlab}>
             <Text style={[type.label, endArmed ? styles.onSlabTextArmed : styles.onSlabText]}>
-              {endArmed ? strings.sessionEndConfirmPrompt.toUpperCase() : strings.sessionNextExerciseLabel}
+              {endArmed
+                ? strings.sessionEndConfirmPrompt.toUpperCase()
+                : warmDown
+                  ? strings.sessionWarmDownEndLabel.toUpperCase()
+                  : strings.sessionNextExerciseLabel}
             </Text>
           </Slab>
         </Pressable>

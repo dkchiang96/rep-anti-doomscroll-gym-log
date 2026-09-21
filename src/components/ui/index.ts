@@ -6,4 +6,4 @@ export { SetInputRow } from './SetInputRow';
 export { Slab } from './Slab';
 export { StepperButton } from './StepperButton';
 export { TransportButton, TransportResetButton } from './TransportButton';
-export { ensureRestNotificationChannel, useRestNotifications } from './useRestNotifications';
+export { cancelRestNotifications, ensureRestNotificationChannel, useRestNotifications } from './useRestNotifications';

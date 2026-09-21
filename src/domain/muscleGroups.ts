@@ -11,7 +11,7 @@
 // data using any of those four names (or the importer's own "Legs" guess)
 // still resolves into the "Legs" chip via LEGACY_ALIASES below — nothing
 // gets rewritten in the database, only the display mapping changes.
-export const MUSCLE_GROUPS = ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core'] as const;
+export const MUSCLE_GROUPS = ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core', 'Forearms', 'Neck'] as const;
 
 export type MuscleGroupChip = (typeof MUSCLE_GROUPS)[number] | 'Other';
 
