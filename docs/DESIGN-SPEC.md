@@ -3,6 +3,8 @@
 **Status:** authoritative. Where this document and PRD v0.3 §5 disagree, this document wins.
 **Purpose:** turn the Timer Plus screenshots into rules a coding agent can execute without re-inventing rounded cards.
 
+> **About the reference screenshots.** This spec was written against screenshots of [Timer Plus](https://play.google.com/store/apps/details?id=com.vgfit.timerplus) by VGFIT LLC, the interval timer REP's visual design is inspired by. Those screenshots are VGFIT's copyrighted material and are deliberately **not** included in this repository; filenames cited below refer to the author's local copies. REP is an independent, non-commercial personal project and is not affiliated with or endorsed by VGFIT LLC.
+
 ---
 
 ## 0. Why v0 looked wrong

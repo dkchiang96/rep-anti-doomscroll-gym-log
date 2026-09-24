@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Product name | **REP** |
-| Author | Chief Product Officer (drafted with Derrick Chiang) |
+| Author | Derrick Chiang, drafted with Claude acting in a Chief Product Officer role |
 | Date | 30 August 2026 |
 | Version | 0.3 (build-ready) |
 | Phase 1 target | Gym-usable in 7 days, feature-complete in 10 |

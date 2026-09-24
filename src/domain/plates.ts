@@ -28,7 +28,7 @@ export interface PlateCalculationResult {
 // convention. Quantity is deliberately left at 0 — how many of each plate a
 // given gym actually has is not something this app should guess (CLAUDE.md
 // invariant), so nothing is usable until the user records their own counts.
-export const DEFAULT_PLATE_DENOMINATIONS: ReadonlyArray<{ denominationKg: number; colourHex: string }> = [
+export const DEFAULT_PLATE_DENOMINATIONS: readonly { denominationKg: number; colourHex: string }[] = [
   { denominationKg: 25, colourHex: '#E2231A' },
   { denominationKg: 20, colourHex: '#2C6BAC' },
   { denominationKg: 15, colourHex: '#F4C430' },

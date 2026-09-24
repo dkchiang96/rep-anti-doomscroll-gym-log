@@ -680,3 +680,16 @@ User sent a fresh three-item list. Plan stated and approved first; the delete sc
 - Deleting the session hides it everywhere, not just from the exercise being viewed — that's the "whole session" choice.
 
 **Exit check:** `npm run typecheck`, `npm run test` (33 suites, 165 tests, up from 159 — five new in `sessionDelete.test.ts`), `npm run lint` (0 errors, same two pre-existing warnings) and `npx expo export --platform android` pass. No device here — on-device: archive the active programme and confirm Home updates on return; flip the toggle on another programme and confirm Home follows; delete a session from Progress and confirm it disappears from Progress and History. JS-only: Metro reload for a dev build, a rebuild for an APK.
+
+## 2026-09-24 — housekeeping: portfolio readiness
+
+Not a numbered session; repo tidy-up ahead of showing the project publicly.
+
+- `README.md` rewritten (was the Expo starter): what REP is, the health-planning → programme JSON → REP pipeline, the AI-directed build method, features, stack, and a Timer Plus credit.
+- `LICENSE` now names Derrick Chiang (the scaffold had copied Expo's own MIT licence) and notes it grants no rights in Timer Plus.
+- Removed the five Timer Plus reference screenshots from `docs/screenshots/`. They are VGFIT LLC's copyrighted material; notes at the top of `DESIGN-SPEC.md` and `REBUILD-SESSIONS.md` explain why cited filenames are absent. REP screenshots renamed to `live-workout.jpg` / `set-logging.jpg`.
+- Deleted unused Expo scaffold leftovers: `scripts/reset-project.js` and its npm script, React/Expo logos and badges, tab icons, `assets/expo.icon/`, and the default icon/splash/favicon PNGs (`app.json` only uses `REP-logo.png`).
+- PRD author line now says it was drafted with Claude in a CPO role.
+- Lint: 2 warnings → 0 (`readonly T[]` in `plates.ts`; the deliberate lazy `require` in `useRestNotifications.ts` gets a justified disable comment).
+- Typecheck clean, 33 suites / 165 tests pass. No behaviour changes.
+- **Outstanding:** the Timer Plus screenshots remain in unpushed history (commit `4cad94b` onward) until that history is rewritten; don't push `rebuild-ui` before then.

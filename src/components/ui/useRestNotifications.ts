@@ -32,6 +32,8 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 function getNotifications(): typeof import('expo-notifications') | null {
   if (isExpoGo) return null;
+  // Lazy require is deliberate: a static import crashes Expo Go at startup.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('expo-notifications');
 }
 

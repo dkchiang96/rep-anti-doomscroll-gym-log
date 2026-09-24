@@ -4,6 +4,8 @@ Eight sessions. **One session per Claude Code context window.** `/clear` between
 
 This supersedes `BUILD-SESSIONS.md` for the UI layer. The data layer built by the original Sessions 1–2 is kept.
 
+> The Timer Plus reference screenshots cited in these briefs are not included in the repository. See the note at the top of `DESIGN-SPEC.md`.
+
 ---
 
 ## Before you start
