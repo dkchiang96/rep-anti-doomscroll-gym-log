@@ -692,4 +692,4 @@ Not a numbered session; repo tidy-up ahead of showing the project publicly.
 - PRD author line now says it was drafted with Claude in a CPO role.
 - Lint: 2 warnings → 0 (`readonly T[]` in `plates.ts`; the deliberate lazy `require` in `useRestNotifications.ts` gets a justified disable comment).
 - Typecheck clean, 33 suites / 165 tests pass. No behaviour changes.
-- **Outstanding:** the Timer Plus screenshots remain in unpushed history (commit `4cad94b` onward) until that history is rewritten; don't push `rebuild-ui` before then.
+- History rewritten before first push so the Timer Plus screenshots never reached GitHub (`git filter-branch` over the unpushed range only; `origin/master` untouched, pushed as a fast-forward). Pre-rewrite backup kept outside the repo as `rep-backup.bundle`.
