@@ -22,7 +22,7 @@ Before REP, every session depended on three separate tools:
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/before-keep.jpg" width="220" alt="Google Keep note with free-text sets and reps"><br><sub>Google Keep log</sub></td>
-    <td align="center"><img src="docs/screenshots/before-timer.jpg" width="220" alt="Timer Plus stopwatch screen"><br><sub>Timer Plus stopwatch</sub></td>
+    <td align="center" width="220"><a href="https://play.google.com/store/apps/details?id=com.vgfit.timerplus"><b>Timer Plus</b></a><br><sub>Stopwatch app (screenshot not reproduced; see the Play Store listing)</sub></td>
     <td align="center"><img src="docs/screenshots/before-programme.jpeg" width="220" alt="Training programme screenshot saved in WhatsApp"><br><sub>Programme screenshot in WhatsApp</sub></td>
   </tr>
 </table>
@@ -125,7 +125,7 @@ npm run test          # 33 suites, 165 tests
 
 ## Credits
 
-REP's visual design (full-width colour blocks, heavy condensed numerals and a black on yellow timer) is inspired by [*Timer Plus - Workouts Timer*](https://play.google.com/store/apps/details?id=com.vgfit.timerplus) by Uniqo Lab. This was the interval timer I used between sets before building REP. Its readability during a workout is the reason REP looks the way it does. The Timer Plus screenshot above is included only to illustrate my previous setup. REP is an independent, non-commercial personal project and is not affiliated with or endorsed by Uniqo Lab. No Timer Plus code or assets are included in the app.
+REP's visual design (full-width colour blocks, heavy condensed numerals and a black on yellow timer) is inspired by [*Timer Plus - Workouts Timer*](https://play.google.com/store/apps/details?id=com.vgfit.timerplus) by Uniqo Lab. This was the interval timer I used between sets before building REP. Its readability during a workout is the reason REP looks the way it does. REP is an independent, non-commercial personal project and is not affiliated with or endorsed by Uniqo Lab. No Timer Plus code, screenshots or other assets are included in this repository.
 
 ## License
 

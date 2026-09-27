@@ -700,3 +700,10 @@ Not a numbered session; repo tidy-up ahead of showing the project publicly.
 - Timer Plus developer corrected to **Uniqo Lab** (the current Play Store listing) in README, `LICENSE` and `DESIGN-SPEC.md`; the 2026-09-24 entry's "VGFIT LLC" came from third-party download sites.
 - One Timer Plus screenshot (`docs/screenshots/before-timer.jpg`) is now included deliberately, in the README only, to illustrate the pre-REP setup. The reference set remains excluded.
 - New screenshots in `docs/screenshots/`; the old `docs/screenshots/REP/` pair (design-showcase screen) removed as unused.
+
+## 2026-09-27 — housekeeping: pre-publication privacy and copyright pass
+
+- Removed the Timer Plus screenshot (`docs/screenshots/before-timer.jpg`) added earlier today; the README now links to the Play Store listing instead, so no Uniqo Lab material is in the repository. Supersedes the previous entry's note that one screenshot was included deliberately.
+- PRD Phase 3: the programme constraint now lists the exercise exclusions without the medical reason.
+- "Clone" wording in `PRD.md` §5 and `DESIGN-SPEC.md` §5.1 changed to "modelled on"; no change to what was built.
+- Commit history still carries the author's personal email and the two items above in older commits; a history rewrite (email → GitHub noreply address, strip both items) is pending before the repo goes public.

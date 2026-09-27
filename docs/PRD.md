@@ -100,7 +100,7 @@ Accounts and login UI · cloud sync · social features · any runtime AI or LLM 
 
 ## 5. Design direction
 
-Cloned from the Timer Plus screenshots, which are the user's proven visual comfort zone.
+Modelled on the Timer Plus screenshots, which are the user's proven visual comfort zone.
 
 | Token | Value | Use |
 |---|---|---|

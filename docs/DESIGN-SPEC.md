@@ -3,7 +3,7 @@
 **Status:** authoritative. Where this document and PRD v0.3 §5 disagree, this document wins.
 **Purpose:** turn the Timer Plus screenshots into rules a coding agent can execute without re-inventing rounded cards.
 
-> **About the reference screenshots.** This spec was written against screenshots of [Timer Plus](https://play.google.com/store/apps/details?id=com.vgfit.timerplus) by Uniqo Lab, the interval timer REP's visual design is inspired by. The reference set cited below is not included in this repository; filenames refer to the author's local copies. A single Timer Plus screenshot appears in the README, only to illustrate the author's setup before REP. REP is an independent, non-commercial personal project and is not affiliated with or endorsed by Uniqo Lab.
+> **About the reference screenshots.** This spec was written against screenshots of [Timer Plus](https://play.google.com/store/apps/details?id=com.vgfit.timerplus) by Uniqo Lab, the interval timer REP's visual design is inspired by. The reference set cited below is not included in this repository; filenames refer to the author's local copies. REP is an independent, non-commercial personal project and is not affiliated with or endorsed by Uniqo Lab.
 
 ---
 
@@ -145,7 +145,7 @@ Minimum **56dp**, no exceptions. Any control that cannot be 56dp does not belong
 
 ### 5.1 Live workout screen — the hero
 
-**This is a one-to-one structural clone of Timer Plus's Rounds screen** (`Screenshot_20260830_192402_Timer_Plus.jpg`). Same zones, same proportions, same order. Only the labels change.
+**This screen is closely modelled on the layout of Timer Plus's Rounds screen** (`Screenshot_20260830_192402_Timer_Plus.jpg`). Same zones, same proportions, same order. Only the labels change.
 
 ```
 ┌────────────────────────────────────┐
