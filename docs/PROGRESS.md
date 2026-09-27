@@ -693,3 +693,10 @@ Not a numbered session; repo tidy-up ahead of showing the project publicly.
 - Lint: 2 warnings → 0 (`readonly T[]` in `plates.ts`; the deliberate lazy `require` in `useRestNotifications.ts` gets a justified disable comment).
 - Typecheck clean, 33 suites / 165 tests pass. No behaviour changes.
 - History rewritten before first push so the Timer Plus screenshots never reached GitHub (`git filter-branch` over the unpushed range only; `origin/master` untouched, pushed as a fast-forward). Pre-rewrite backup kept outside the repo as `rep-backup.bundle`.
+
+## 2026-09-27 — housekeeping: new README
+
+- README replaced with the author's own write-up (problem, phone-free design rationale, before/after screenshots, planning pipeline, build process). Checked against the code before committing; corrected three descriptions: logging is a sets-done tap per set with rows pre-filled on the transition screen (not a per-set log that starts a timer); the stopwatch is started once and runs continuously, with the 30s flash as the rest cue; Home lists the programme's days to pick from rather than auto-selecting today's.
+- Timer Plus developer corrected to **Uniqo Lab** (the current Play Store listing) in README, `LICENSE` and `DESIGN-SPEC.md`; the 2026-09-24 entry's "VGFIT LLC" came from third-party download sites.
+- One Timer Plus screenshot (`docs/screenshots/before-timer.jpg`) is now included deliberately, in the README only, to illustrate the pre-REP setup. The reference set remains excluded.
+- New screenshots in `docs/screenshots/`; the old `docs/screenshots/REP/` pair (design-showcase screen) removed as unused.
