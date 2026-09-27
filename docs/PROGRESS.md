@@ -706,4 +706,4 @@ Not a numbered session; repo tidy-up ahead of showing the project publicly.
 - Removed the Timer Plus screenshot (`docs/screenshots/before-timer.jpg`) added earlier today; the README now links to the Play Store listing instead, so no Uniqo Lab material is in the repository. Supersedes the previous entry's note that one screenshot was included deliberately.
 - PRD Phase 3: the programme constraint now lists the exercise exclusions without the medical reason.
 - "Clone" wording in `PRD.md` §5 and `DESIGN-SPEC.md` §5.1 changed to "modelled on"; no change to what was built.
-- Commit history still carries the author's personal email and the two items above in older commits; a history rewrite (email → GitHub noreply address, strip both items) is pending before the repo goes public.
+- History rewritten and force-pushed by the author: every commit now uses the GitHub noreply address, and the Timer Plus screenshot and the PRD's medical reason are absent from all commits. Verified against `origin/master`. Pre-rewrite backup kept outside the repo as `rep-backup-before-privacy-rewrite.bundle`.
