@@ -61,6 +61,8 @@ export async function importProgramme(
       muscleGroup: sample.muscleGroup,
       equipmentType: choice?.equipmentType ?? 'other',
       loadConvention: sample.loadConvention,
+      kind: sample.kind,
+      track: sample.track,
       barWeightKg: null,
       defaultWeightStep: null,
       source: 'imported',
@@ -92,6 +94,8 @@ export async function importProgramme(
       programmeId: programme.id,
       name: template.name,
       dayHint: template.dayHint,
+      warmUp: template.warmUp,
+      warmDown: template.warmDown,
       orderIndex: templateIndex,
       isArchived: false,
     });
@@ -108,6 +112,10 @@ export async function importProgramme(
         targetSets: exercise.targetSets,
         targetRepsMin: exercise.targetRepsMin,
         targetRepsMax: exercise.targetRepsMax,
+        targetDistanceM: exercise.targetDistanceM,
+        targetTimeSeconds: exercise.targetTimeSeconds,
+        targetCalories: exercise.targetCalories,
+        targetLoadKg: exercise.targetLoadKg,
         supersetGroupId: exercise.supersetGroup,
         notes: exercise.notes.length > 0 ? exercise.notes : null,
       });

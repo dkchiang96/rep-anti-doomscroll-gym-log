@@ -1,4 +1,4 @@
-import { formatSessionExerciseShorthand } from '../keepShorthand';
+import { formatLoggedExercise, formatSessionExerciseShorthand } from '../keepShorthand';
 
 describe('formatSessionExerciseShorthand', () => {
   it('reconstructs a working-set-plus-drop-sets line, matching the original Keep grammar', () => {
@@ -62,5 +62,17 @@ describe('formatSessionExerciseShorthand — left/right split sets', () => {
 
   it('reads an even split exactly like an unsplit set', () => {
     expect(formatSessionExerciseShorthand([left('a', 20, 10), right('a', 20, 10)], false)).toBe('20kg 10');
+  });
+});
+
+describe('formatLoggedExercise', () => {
+  it('uses the round shorthand for a cardio station and the Keep grammar otherwise', () => {
+    const rounds = [
+      { weightKg: 0, reps: 0, distanceM: 1000, durationSeconds: 245, setType: 'working' as const },
+      { weightKg: 0, reps: 0, distanceM: 1000, durationSeconds: 252, setType: 'working' as const },
+    ];
+    expect(formatLoggedExercise(rounds, { kind: 'cardio', track: ['distance_m', 'time'], isBodyweight: true })).toBe('1000m 4:05 4:12');
+    expect(formatLoggedExercise([{ weightKg: 20, reps: 10, setType: 'working' }], { kind: 'strength', isBodyweight: false })).toBe('20kg 10');
+    expect(formatLoggedExercise([{ weightKg: 20, reps: 10, setType: 'working' }], { isBodyweight: false })).toBe('20kg 10');
   });
 });

@@ -9,6 +9,10 @@ export interface ProgressSessionEntry {
   // Null while the session is still in progress — the Progress screen only
   // offers delete for a finished one.
   endedAt: Date | null;
+  // This exercise's RPE in that session (null before RPE logging existed).
+  rpe: number | null;
+  // This exercise's free-text note in that session.
+  note: string | null;
   sets: {
     id: string;
     weightKg: number;
@@ -17,6 +21,10 @@ export interface ProgressSessionEntry {
     // Left/right tracking — see src/domain/sidePairs.ts.
     side: typeof setEntry.$inferSelect.side;
     parentSetId: string | null;
+    // Cardio round values (src/domain/cardio.ts); null for strength sets.
+    distanceM: number | null;
+    durationSeconds: number | null;
+    calories: number | null;
   }[];
 }
 
@@ -34,6 +42,8 @@ export async function listSessionHistoryForExercise(
       sessionId: session.id,
       startedAt: session.startedAt,
       endedAt: session.endedAt,
+      rpe: sessionExercise.rpe,
+      note: sessionExercise.note,
       index: setEntry.index,
       weightKg: setEntry.weightKg,
       reps: setEntry.reps,
@@ -41,6 +51,9 @@ export async function listSessionHistoryForExercise(
       setId: setEntry.id,
       side: setEntry.side,
       parentSetId: setEntry.parentSetId,
+      distanceM: setEntry.distanceM,
+      durationSeconds: setEntry.durationSeconds,
+      calories: setEntry.calories,
     })
     .from(setEntry)
     .innerJoin(sessionExercise, eq(sessionExercise.id, setEntry.sessionExerciseId))
@@ -60,7 +73,7 @@ export async function listSessionHistoryForExercise(
   for (const row of rows) {
     let entry = bySession.get(row.sessionId);
     if (!entry) {
-      entry = { sessionId: row.sessionId, startedAt: row.startedAt, endedAt: row.endedAt, sets: [] };
+      entry = { sessionId: row.sessionId, startedAt: row.startedAt, endedAt: row.endedAt, rpe: row.rpe, note: row.note, sets: [] };
       bySession.set(row.sessionId, entry);
     }
     entry.sets.push({
@@ -70,6 +83,9 @@ export async function listSessionHistoryForExercise(
       setType: row.setType,
       side: row.side,
       parentSetId: row.parentSetId,
+      distanceM: row.distanceM,
+      durationSeconds: row.durationSeconds,
+      calories: row.calories,
     });
   }
 

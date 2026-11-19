@@ -15,6 +15,10 @@ export interface PreviousSet {
   setType: SetType;
   parentSetId: string | null;
   side?: Side | null;
+  // Cardio round values (src/domain/cardio.ts), carried into the ghost.
+  distanceM?: number | null;
+  durationSeconds?: number | null;
+  calories?: number | null;
 }
 
 export interface GhostSet {
@@ -26,6 +30,9 @@ export interface GhostSet {
   // Position (within this ghost list) of the set this one is a drop set
   // from. The source set's own DB id is meaningless in a new session.
   parentIndex: number | null;
+  distanceM: number | null;
+  durationSeconds: number | null;
+  calories: number | null;
 }
 
 // A left/right split set from last time pre-fills as one ordinary (unsplit)
@@ -46,6 +53,9 @@ export function buildGhostSets(previousSets: PreviousSet[]): GhostSet[] {
       reps: values.reps,
       setType: s.setType,
       parentIndex: s.parentSetId != null ? (positionById.get(s.parentSetId) ?? null) : null,
+      distanceM: s.distanceM ?? null,
+      durationSeconds: s.durationSeconds ?? null,
+      calories: s.calories ?? null,
     };
   });
 }

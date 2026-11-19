@@ -5,6 +5,7 @@
 
 import type { MatchableExercise, ExerciseMatch } from './fuzzyMatch';
 import { matchExercises } from './fuzzyMatch';
+import type { ExerciseKind } from './cardio';
 import type { ProgrammeImportData, ProgrammeImportExercise } from './programmeSchema';
 
 // Above this score the default decision is "accept" the best match; below
@@ -37,7 +38,12 @@ function dedupeExerciseNames(data: ProgrammeImportData): Map<string, ProgrammeIm
   return byKey;
 }
 
-export function buildProgrammeMatchRows<T extends MatchableExercise>(
+// A library exercise only matches an import entry of the same kind: a
+// cardio "Run" station must never be auto-accepted onto an old strength
+// exercise of the same name (import never rewrites an existing exercise —
+// invariant 10 — so it would stay strength). Library rows without `kind`
+// are strength, as every pre-cardio exercise is.
+export function buildProgrammeMatchRows<T extends MatchableExercise & { kind?: ExerciseKind }>(
   data: ProgrammeImportData,
   library: T[],
 ): ProgrammeMatchRow<T>[] {
@@ -45,7 +51,8 @@ export function buildProgrammeMatchRows<T extends MatchableExercise>(
   const rows: ProgrammeMatchRow<T>[] = [];
 
   for (const [, sample] of byKey) {
-    const matches = matchExercises(sample.name, library);
+    const sameKind = library.filter((e) => (e.kind ?? 'strength') === sample.kind);
+    const matches = matchExercises(sample.name, sameKind);
     const bestMatch = matches[0] ?? null;
     const decision: MatchDecision =
       bestMatch && bestMatch.score >= AUTO_ACCEPT_THRESHOLD

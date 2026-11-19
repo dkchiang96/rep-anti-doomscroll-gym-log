@@ -33,9 +33,9 @@ describe('buildSetCsv', () => {
     const csv = buildSetCsv([baseRow]);
     const lines = csv.split('\n');
     expect(lines[0]).toBe(
-      'date,session_note,exercise,muscle_group,equipment_type,load_convention,weight_kg,total_kg,reps,set_type,side',
+      'date,session_note,exercise,muscle_group,equipment_type,load_convention,weight_kg,total_kg,reps,set_type,side,rpe,exercise_note,distance_m,time_s,calories',
     );
-    expect(lines[1]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,45,8,working,');
+    expect(lines[1]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,45,8,working,,,,,,');
   });
 
   it('exports side and gives both rows of a split pair the left + right total', () => {
@@ -43,9 +43,9 @@ describe('buildSetCsv', () => {
     const plain: ExportSetRow = { ...baseRow, setId: 'P', side: null, parentSetId: null, weightKg: 22.5, reps: 8 };
     const right: ExportSetRow = { ...baseRow, setId: 'R', side: 'right', parentSetId: 'L', weightKg: 20, reps: 9 };
     const lines = buildSetCsv([left, plain, right]).split('\n');
-    expect(lines[1]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,42.5,10,working,left');
-    expect(lines[2]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,45,8,working,');
-    expect(lines[3]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,20,42.5,9,working,right');
+    expect(lines[1]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,42.5,10,working,left,,,,,');
+    expect(lines[2]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,45,8,working,,,,,,');
+    expect(lines[3]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,20,42.5,9,working,right,,,,,');
   });
 
   it('quotes fields containing commas, quotes, or newlines', () => {
@@ -70,5 +70,32 @@ describe('buildFullJsonExport', () => {
     const parsed = JSON.parse(json);
     expect(parsed.exportedAt).toBe(exportedAt.toISOString());
     expect(parsed.exercises).toEqual([{ id: 'e1' }]);
+  });
+});
+
+describe('buildSetCsv — RPE, notes and cardio columns', () => {
+  it('writes rpe, exercise_note (escaped) and cardio round values', () => {
+    const row: ExportSetRow = {
+      sessionId: 's1',
+      sessionStartedAt: new Date('2026-11-20T12:00:00.000Z'),
+      sessionNote: 'feeling sick',
+      exerciseName: 'Run',
+      muscleGroup: 'Conditioning',
+      equipmentType: 'bodyweight',
+      loadConvention: 'bodyweight',
+      weightKg: 0,
+      reps: 0,
+      setType: 'working',
+      side: null,
+      rpe: 6,
+      exerciseNote: 'RPE 6, can push harder, next round',
+      distanceM: 1000,
+      durationSeconds: 245,
+      calories: null,
+    };
+    const lines = buildSetCsv([row]).split('\n');
+    expect(lines[1]).toBe(
+      '2026-11-20,feeling sick,Run,Conditioning,bodyweight,bodyweight,0,0,0,working,,6,"RPE 6, can push harder, next round",1000,245,',
+    );
   });
 });

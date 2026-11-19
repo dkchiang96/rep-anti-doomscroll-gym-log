@@ -5,7 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useDatabase } from '@/data/DatabaseProvider';
 import { getSessionDetail, listSessionSummaries, type SessionDetailExercise, type SessionSummary } from '@/data/repositories/historyRepository';
 import { formatElapsed } from '@/domain/duration';
-import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
+import { formatLoggedExercise } from '@/domain/keepShorthand';
 import { strings } from '@/strings';
 import { color, size, type } from '@/theme';
 
@@ -80,7 +80,7 @@ export default function History() {
                 {loadingDetail ? null : detail && detail.length > 0 ? (
                   detail.map((ex) => (
                     <Text key={ex.sessionExerciseId} style={[type.body, styles.detailLine]}>
-                      {ex.exerciseName.toUpperCase()} — {formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—'}
+                      {ex.exerciseName.toUpperCase()} — {formatLoggedExercise(ex.sets, ex) || '—'}
                     </Text>
                   ))
                 ) : (

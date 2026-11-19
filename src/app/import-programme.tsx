@@ -22,7 +22,7 @@ import { color, size, type } from '@/theme';
 // exercise. src/domain/programmeSchema.ts and programmeMatching.ts are
 // unchanged, per the R5 brief.
 
-type Library = { id: string; name: string; aliases: string[] };
+type Library = { id: string; name: string; aliases: string[]; kind: 'strength' | 'cardio' };
 
 type Stage =
   | { kind: 'paste' }
@@ -45,7 +45,7 @@ export default function ImportProgramme() {
   const [activateProgramme, setActivateProgramme] = useState(false);
 
   useEffect(() => {
-    void listExercises(db, userId).then((all) => setLibrary(all.map((e) => ({ id: e.id, name: e.name, aliases: e.aliases }))));
+    void listExercises(db, userId).then((all) => setLibrary(all.map((e) => ({ id: e.id, name: e.name, aliases: e.aliases, kind: e.kind }))));
   }, [db, userId]);
 
   async function handlePickFile() {

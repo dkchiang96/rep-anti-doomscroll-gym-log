@@ -66,3 +66,16 @@ describe('buildGhostSets — left/right split sets', () => {
     expect(ghosts.map((g) => g.index)).toEqual([0, 1, 2]);
   });
 });
+
+describe('buildGhostSets — cardio rounds', () => {
+  it('carries distance, time and calories into the ghost rows', () => {
+    const ghosts = buildGhostSets([
+      { id: 'a', index: 0, weightKg: 0, reps: 0, setType: 'working', parentSetId: null, distanceM: 1000, durationSeconds: 245, calories: null },
+      { id: 'b', index: 1, weightKg: 0, reps: 0, setType: 'working', parentSetId: null },
+    ]);
+    expect(ghosts.map((g) => [g.distanceM, g.durationSeconds, g.calories])).toEqual([
+      [1000, 245, null],
+      [null, null, null],
+    ]);
+  });
+});

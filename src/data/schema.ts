@@ -1,5 +1,7 @@
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+import type { CardioMetric } from '../domain/cardio';
+
 // The single local user. Does not carry user_id/deleted_at/sync_state —
 // those columns describe a row's relationship to a user, which is meaningless
 // for the user row itself.
@@ -39,6 +41,11 @@ export const exercise = sqliteTable('exercise', {
   defaultWeightStep: real('default_weight_step'),
   // FR-4.2: soft marker only, never an alarm. Null falls back to 60s in the domain layer.
   targetRestSeconds: integer('target_rest_seconds'),
+  // Cardio / Hyrox stations (src/domain/cardio.ts). 'strength' is every
+  // exercise that existed before this column. `track` lists what a cardio
+  // station records each round; null for strength.
+  kind: text('kind', { enum: ['strength', 'cardio'] }).notNull().default('strength'),
+  track: text('track', { mode: 'json' }).$type<CardioMetric[]>(),
   source: text('source', { enum: ['user', 'system', 'imported'] }).notNull(),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
   useCount: integer('use_count').notNull().default(0),
@@ -92,6 +99,10 @@ export const template = sqliteTable('template', {
   programmeId: text('programme_id').references(() => programme.id),
   name: text('name').notNull(),
   dayHint: text('day_hint'),
+  // Free-text warm-up / warm-down instructions for this programme day,
+  // shown on the timer screen and never tracked as exercises.
+  warmUp: text('warm_up'),
+  warmDown: text('warm_down'),
   orderIndex: integer('order_index').notNull().default(0),
   isArchived: integer('is_archived', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -116,6 +127,12 @@ export const templateExercise = sqliteTable('template_exercise', {
   targetSets: integer('target_sets').notNull(),
   targetRepsMin: integer('target_reps_min').notNull(),
   targetRepsMax: integer('target_reps_max').notNull(),
+  // Cardio per-round targets (src/domain/cardio.ts) — all optional. A cardio
+  // station that doesn't track reps stores targetRepsMin/Max as 0.
+  targetDistanceM: real('target_distance_m'),
+  targetTimeSeconds: integer('target_time_seconds'),
+  targetCalories: integer('target_calories'),
+  targetLoadKg: real('target_load_kg'),
   supersetGroupId: text('superset_group_id'),
   notes: text('notes'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -165,6 +182,14 @@ export const sessionExercise = sqliteTable('session_exercise', {
   orderIndex: integer('order_index').notNull().default(0),
   supersetGroupId: text('superset_group_id'),
   note: text('note'),
+  // Rate of perceived exertion, 1–10, for this exercise in this session —
+  // required before leaving the exercise; null on sessions logged before
+  // RPE existed (and on imports). Feeds src/domain/progressReadiness.ts.
+  rpe: integer('rpe'),
+  // Cardio lap timer: set while a round's lap is running, cleared when it
+  // stops (the round's set row then gets durationSeconds). Stored, not held
+  // in memory, so a running lap survives the app being killed.
+  lapStartedAt: integer('lap_started_at', { mode: 'timestamp_ms' }),
   // Temporarily hidden from the active logging flow (machine occupied, etc.) — not a deletion. FR-3.11.
   skippedAt: integer('skipped_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -196,6 +221,11 @@ export const setEntry = sqliteTable('set', {
   // at the left row (same attachment mechanism drop sets use). See
   // src/domain/sidePairs.ts.
   side: text('side', { enum: ['left', 'right'] }),
+  // Cardio round values (src/domain/cardio.ts) — null for strength sets.
+  // weightKg/reps above double as a cardio round's load and reps.
+  distanceM: real('distance_m'),
+  durationSeconds: integer('duration_seconds'),
+  calories: integer('calories'),
   restAfterSeconds: integer('rest_after_seconds'),
   completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),

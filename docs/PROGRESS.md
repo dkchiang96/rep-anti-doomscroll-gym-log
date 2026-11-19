@@ -750,3 +750,64 @@ Not a numbered session. Requested for tracking asymmetry on unilateral lifts. Pr
 - "Make even again"
 - export a CSV and check the `side` column
 - set up two sessions at the top of the range and confirm the flag appears
+
+## 2026-11-19 — feature: day warm-ups, RPE + notes, cardio / Hyrox stations
+
+Not a numbered session. Three requests, built after the author confirmed: notes per exercise *and* per session; RPE required per exercise and used as the progression signal (free-text notes don't affect it); cardio logged per station per round; cardio time recorded by an in-app lap timer.
+
+**Prompt and file format**
+- New `docs/PROGRAMME-PROMPT.md`: a ready-to-paste LLM prompt that plans and exports a programme. It covers per-day warm-ups and warm-downs, cardio and Hyrox stations, and reading REP's CSV (RPE and notes) to decide progression. It includes the full schema 1.1 field rules and a worked example. This delivers the programme-prompt template earlier entries listed as owed. PRD Appendices A and B are marked superseded and point to it.
+- **Schema 1.1** (`programmeSchema.ts`). Everything is optional or defaulted, so 1.0 files still import unchanged.
+  - **Days:** `warm_up` / `warm_down` text.
+  - **Exercises:** `kind` (`strength` | `cardio`); cardio requires `track` (any of `distance_m, time, reps, calories, load_kg`), with optional `target_distance_m / target_time_seconds / target_calories / target_load_kg`.
+  - **Cardio rules:** each target needs its matching `track` entry. Reps targets are optional for cardio (stored as 0/0 when absent). Cardio fields on a strength exercise are rejected.
+  - **Muscle groups:** `Conditioning` added.
+  - **Drift test:** the worked example is parsed straight out of the prompt doc, so the doc and the validator can't drift apart.
+- **Matching** is kind-aware. A cardio station never auto-matches a strength exercise of the same name, because import never rewrites an existing exercise (invariant 10). The manual remap picker isn't filtered by kind (known gap).
+
+**Data:** migration `0007_sour_avengers.sql`, all additive.
+- **Tables:** `template.warm_up/warm_down`, `exercise.kind` (default `strength`) / `track` (JSON), `template_exercise.target_distance_m/target_time_seconds/target_calories/target_load_kg`, `session_exercise.rpe/lap_started_at`, and `set.distance_m/duration_seconds/calories`.
+- **Cardio rounds** are ordinary set rows: `weight_kg` / `reps` double as a round's load and reps.
+
+**Warm-up / warm-down:** the timer screen's warm-up state (no exercise yet) shows the day's `warm_up` text at heading size where Last 3 rounds normally sits. The warm-down state shows `warm_down` there. Nothing is tracked.
+
+**RPE and notes**
+- **Logging screen:** gains an RPE picker (1–10, two rows of five 56dp buttons) and an optional note under the sets. Both are written to `session_exercise` on every change.
+- **RPE is required:** NEXT EXERCISE and the long-press END route are blocked until it's set. The slab reads SET RPE TO CONTINUE and the picker's prompt turns red and scrolls into view.
+- **Session note:** the end-of-workout recap has an optional session note (writes `session.note` as you type), on both the timer and logging screens.
+- **CSV export** gains `rpe`, `exercise_note`, `distance_m`, `time_s` and `calories`. The JSON export carries the new columns automatically.
+- **`progressAdvice`** replaces `isReadyToProgress` and judges the most recent previous session:
+  - RPE 9–10: nothing.
+  - Top of range at RPE ≤ 7: "add load" after one session.
+  - Top of range at RPE 8, or no RPE: the original two-session rule.
+  - Below top of range at RPE ≤ 6: "push for more reps".
+  - Sessions logged before RPE existed fall back to the two-session rule.
+  - Strength only.
+
+**Cardio**
+- **Timer screen:** for a station that tracks `time`, a LAP button replaces the sets-done tally.
+  - **Start / stop:** tap to start a lap, which is stored in `session_exercise.lap_started_at` so it survives an app kill. Tap again to stop: this records the round as a set with `duration_seconds`, pre-filled with the station's per-round targets.
+  - **Discard:** long-press discards a mistaken lap.
+  - **The green box** shows the cardio target ("4 × 1000 M").
+- **Logging screen:** cardio rounds use `CardioRoundRow`, which shows only the tracked values, each with steppers and the keypad. Time is typed as min.sec (`parseMinutesDotSeconds`; an impossible value like 4.75 is ignored, not guessed).
+- **Not offered for cardio:** left/right splitting and drop sets.
+- **History / recap / Last 3 rounds / Progress table** use `formatCardioShorthand` ("1000m 4:05 4:12") via `formatLoggedExercise`.
+- **Progress chart:** hidden for cardio stations.
+- **Created only by import:** cardio stations come in through programme import. Exercises created in-app are strength.
+
+**Known gaps**
+- Ending a workout from the *timer* screen doesn't ask for the current exercise's RPE (that exercise hasn't been through the logging screen yet), so its RPE stays null.
+- The manual remap picker can still map a cardio entry onto a strength exercise.
+
+**Deviation from the plan:** the plan said three commits, one per feature. The three features share files (schema, migration, both screens, export), so it's two commits instead: the prompt doc, then the app changes.
+
+**Exit check:** `npm run typecheck`, `npm run test` (38 suites, 225 tests, up from 195), `npm run lint` (0 problems) and `npx expo export --platform android` pass.
+- **New tests:** `cardio`, the rewritten `progressReadiness` and `cardioLap` repository suites, schema 1.1 and kind-matching cases, and a 1.1 import test.
+- **Not run on a device.** **Needs a new EAS build** (migration).
+- **To check on device:**
+  - import a 1.1 file with warm-ups and a Hyrox day
+  - the warm-up text on the timer screen
+  - lap start/stop/discard, and a lap surviving an app kill
+  - RPE blocking NEXT EXERCISE
+  - the session note on the end recap
+  - the CSV columns

@@ -22,6 +22,13 @@ export interface ExportSetRow {
   setId?: string;
   parentSetId?: string | null;
   side?: Side | null;
+  // Per exercise per session: RPE (1–10) and free-text note.
+  rpe?: number | null;
+  exerciseNote?: string | null;
+  // Cardio round values (src/domain/cardio.ts).
+  distanceM?: number | null;
+  durationSeconds?: number | null;
+  calories?: number | null;
 }
 
 // Mirrors FR-3.12's derived total: per_side doubles the stored weight,
@@ -69,6 +76,11 @@ const CSV_HEADER = [
   'reps',
   'set_type',
   'side',
+  'rpe',
+  'exercise_note',
+  'distance_m',
+  'time_s',
+  'calories',
 ];
 
 // On a split pair, both rows carry the pair's left + right total — summing
@@ -90,6 +102,11 @@ export function buildSetCsv(rows: ExportSetRow[]): string {
         row.reps,
         row.setType,
         row.side ?? '',
+        row.rpe ?? '',
+        csvEscape(row.exerciseNote ?? ''),
+        row.distanceM ?? '',
+        row.durationSeconds ?? '',
+        row.calories ?? '',
       ].join(','),
     );
   }

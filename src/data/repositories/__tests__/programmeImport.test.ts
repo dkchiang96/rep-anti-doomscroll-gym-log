@@ -151,3 +151,48 @@ describe('importProgramme', () => {
     expect(summary.exercisesCreated).toBe(2); // still just squat + crunch, not 3
   });
 });
+
+describe('importProgramme — schema 1.1', () => {
+  it('stores warm-up/down text, cardio exercise kind/track, and cardio targets', async () => {
+    const { db, user } = await setup();
+    const raw = {
+      schema_version: '1.1',
+      programme: {
+        name: 'Hybrid',
+        templates: [
+          {
+            name: 'HYROX',
+            warm_up: '10 min easy jog',
+            warm_down: '5 min walk',
+            exercises: [
+              {
+                name: 'Wall Balls',
+                kind: 'cardio',
+                muscle_group: 'Conditioning',
+                load_convention: 'total',
+                track: ['reps', 'load_kg', 'time'],
+                target_sets: 4,
+                target_reps_min: 20,
+                target_reps_max: 20,
+                target_load_kg: 6,
+                superset_group: 'A',
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const validated = validateProgrammeImport(raw);
+    if (!validated.ok) throw new Error('fixture should validate');
+    const library = (await listExercises(db, user.id)).map((e) => ({ id: e.id, name: e.name, aliases: e.aliases, kind: e.kind }));
+    const rows = buildProgrammeMatchRows(validated.data, library);
+    const summary = await importProgramme(db, user.id, validated.data, rows, new Map([['wall balls', { equipmentType: 'other' }]]), false);
+
+    const [template] = await listTemplatesForProgramme(db, user.id, summary.programmeId);
+    expect(template).toMatchObject({ warmUp: '10 min easy jog', warmDown: '5 min walk' });
+    const [te] = await listTemplateExercisesByTemplate(db, user.id, template.id);
+    expect(te).toMatchObject({ targetSets: 4, targetRepsMin: 20, targetRepsMax: 20, targetLoadKg: 6, targetDistanceM: null });
+    const exercise = await getExerciseById(db, user.id, te.exerciseId);
+    expect(exercise).toMatchObject({ kind: 'cardio', track: ['reps', 'load_kg', 'time'], muscleGroup: 'Conditioning' });
+  });
+});

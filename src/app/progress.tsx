@@ -9,7 +9,7 @@ import { listSessionHistoryForExercise, type ProgressSessionEntry } from '@/data
 import { softDeleteSessionCascade } from '@/data/repositories/sessionRepository';
 import type { exercise as exerciseTable } from '@/data/schema';
 import { buildProgressPoints, filterLastNDays } from '@/domain/progressChart';
-import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
+import { formatLoggedExercise } from '@/domain/keepShorthand';
 import { MUSCLE_GROUPS, OTHER_MUSCLE_GROUP_CHIP, resolveMuscleGroupChip, type MuscleGroupChip } from '@/domain/muscleGroups';
 import { strings } from '@/strings';
 import { color, size, type } from '@/theme';
@@ -167,12 +167,14 @@ export default function Progress() {
 
                 {points.length > 0 ? (
                   <>
-                    <ProgressChart points={points} />
+                    {/* The chart plots top-set weight, which says nothing about a
+                        cardio station — those show the round table only. */}
+                    {ex.kind === 'cardio' ? null : <ProgressChart points={points} />}
                     <Text style={[type.caption, styles.sectionHeading]}>{strings.progressTableHeading(range.label)}</Text>
                     {tableRows.map((entry) => (
                       <View key={entry.sessionId} style={styles.tableRowWrap}>
                         <Text style={[type.body, styles.tableRowText]}>
-                          {formatEntryDate(entry.startedAt)} — {formatSessionExerciseShorthand(entry.sets, isBodyweight) || '—'}
+                          {formatEntryDate(entry.startedAt)} — {formatLoggedExercise(entry.sets, { kind: ex.kind, track: ex.track, isBodyweight }) || '—'}
                         </Text>
                         {entry.endedAt != null ? (
                           <Pressable onPress={() => void handleDeletePress(entry.sessionId)} style={styles.deleteTouch}>

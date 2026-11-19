@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 
+import { lapDurationSeconds } from '../../domain/cardio';
 import { newId } from '../id';
 import { sessionExercise, setEntry } from '../schema';
 import type { AppDatabase } from '../types';
@@ -116,4 +117,64 @@ export async function splitSetIntoSides(
 export async function joinSides(db: AppDatabase, userId: string, leftSetId: string, rightSetId: string) {
   await softDeleteSet(db, userId, rightSetId);
   return updateSet(db, userId, leftSetId, { side: null });
+}
+
+// ── Cardio lap timer (src/domain/cardio.ts) ─────────────────────────────
+// The running lap's start is stored on the session_exercise row, not held
+// in memory, so a lap survives the app being killed. Stopping writes the
+// round as an ordinary set row (appended, next free index) with its
+// duration, pre-filled with the station's per-round target values — all
+// editable on the logging screen afterwards.
+
+async function getLiveSessionExercise(db: AppDatabase, userId: string, sessionExerciseId: string) {
+  const rows = await db
+    .select()
+    .from(sessionExercise)
+    .where(and(eq(sessionExercise.id, sessionExerciseId), eq(sessionExercise.userId, userId), isNull(sessionExercise.deletedAt)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function startCardioLap(db: AppDatabase, userId: string, sessionExerciseId: string, startedAt: Date = new Date()) {
+  await db
+    .update(sessionExercise)
+    .set({ lapStartedAt: startedAt, updatedAt: new Date() })
+    .where(and(eq(sessionExercise.id, sessionExerciseId), eq(sessionExercise.userId, userId)));
+}
+
+// Discards a lap started by mistake — nothing was recorded for it.
+export async function cancelCardioLap(db: AppDatabase, userId: string, sessionExerciseId: string) {
+  await db
+    .update(sessionExercise)
+    .set({ lapStartedAt: null, updatedAt: new Date() })
+    .where(and(eq(sessionExercise.id, sessionExerciseId), eq(sessionExercise.userId, userId)));
+}
+
+export async function stopCardioLap(
+  db: AppDatabase,
+  userId: string,
+  sessionExerciseId: string,
+  round: { weightKg: number; reps: number; distanceM: number | null; calories: number | null },
+  stoppedAt: Date = new Date(),
+) {
+  const se = await getLiveSessionExercise(db, userId, sessionExerciseId);
+  if (!se?.lapStartedAt) return null;
+  const siblings = await listSetsBySessionExercise(db, userId, sessionExerciseId);
+  const index = siblings.reduce((max, s) => Math.max(max, s.index), -1) + 1;
+  const created = await createSet(db, {
+    userId,
+    sessionExerciseId,
+    index,
+    weightKg: round.weightKg,
+    reps: round.reps,
+    distanceM: round.distanceM,
+    calories: round.calories,
+    durationSeconds: lapDurationSeconds(se.lapStartedAt.getTime(), stoppedAt.getTime()),
+    setType: 'working',
+    parentSetId: null,
+    restAfterSeconds: null,
+    completedAt: stoppedAt,
+  });
+  await cancelCardioLap(db, userId, sessionExerciseId);
+  return created;
 }

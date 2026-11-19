@@ -50,6 +50,13 @@
       "when": 1795070600912,
       "tag": "0006_rapid_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795073476814,
+      "tag": "0007_sour_avengers",
+      "breakpoints": true
     }
   ]
 }

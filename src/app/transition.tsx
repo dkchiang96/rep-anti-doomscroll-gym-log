@@ -4,8 +4,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { cancelRestNotifications, Clock, FlashOverlay, SetInputRow, Slab, TransportButton, useRestNotifications } from '@/components/ui';
-import type { FlashOverlayHandle } from '@/components/ui';
+import {
+  cancelRestNotifications,
+  CardioRoundRow,
+  Clock,
+  FlashOverlay,
+  NoteInput,
+  RpePicker,
+  SetInputRow,
+  Slab,
+  TransportButton,
+  useRestNotifications,
+} from '@/components/ui';
+import type { CardioField, FlashOverlayHandle } from '@/components/ui';
 import { NumericKeypad } from '@/components/transition/NumericKeypad';
 import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
 import { DayExercisePicker, type DayExerciseItem } from '@/components/transition/DayExercisePicker';
@@ -18,10 +29,11 @@ import { getSessionDetail } from '@/data/repositories/historyRepository';
 import {
   createSessionExercise,
   getMostRecentSessionExerciseForExercise,
+  getSessionExerciseById,
   listSessionExercisesBySession,
   updateSessionExercise,
 } from '@/data/repositories/sessionExerciseRepository';
-import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
+import { endSession, getActiveSession, updateSession } from '@/data/repositories/sessionRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import {
   createSet,
@@ -38,7 +50,8 @@ import type { AppDatabase } from '@/data/types';
 import { buildGhostSets, resolveFallbackSet, type GhostSet, type SetType } from '@/domain/ghostPrefill';
 import { deriveLoadDisplay, deriveSplitLoadDisplay } from '@/domain/loadConvention';
 import { pairSides, supportsSideSplit, type Side } from '@/domain/sidePairs';
-import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
+import { parseMinutesDotSeconds } from '@/domain/cardio';
+import { formatLoggedExercise } from '@/domain/keepShorthand';
 import { orderRowsForDisplay } from '@/domain/setRowOrdering';
 import { didCrossInterval } from '@/domain/stopwatch';
 import { inferWeightStep } from '@/domain/weightStep';
@@ -79,7 +92,29 @@ interface MergedRow {
   // The right side when this committed set is split into left/right
   // (src/domain/sidePairs.ts); weightKg/reps above are then the left side.
   right: CommittedSet | null;
+  // Cardio round values (src/domain/cardio.ts); null for strength.
+  distanceM: number | null;
+  durationSeconds: number | null;
+  calories: number | null;
 }
+
+// Any field a row edit can change. Cardio fields only ever change on a
+// cardio station's rows.
+type RowPatch = {
+  weightKg?: number;
+  reps?: number;
+  setType?: SetType;
+  distanceM?: number | null;
+  durationSeconds?: number | null;
+  calories?: number | null;
+};
+
+type KeypadField = 'weight' | 'reps' | 'distance' | 'time' | 'calories';
+
+// Stepper increments for cardio values. Holding a stepper accelerates
+// (StepperButton), so a small step still reaches big distances quickly.
+const DISTANCE_STEP_M = 10;
+const TIME_STEP_S = 1;
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -204,7 +239,15 @@ function TransitionScreen({
   const [ghostSets, setGhostSets] = useState<GhostSet[]>([]);
   const [weightStep, setWeightStep] = useState(DEFAULT_WEIGHT_STEP_KG);
   const [loaded, setLoaded] = useState(false);
-  const [keypadTarget, setKeypadTarget] = useState<{ rowIndex: number; field: 'weight' | 'reps' } | null>(null);
+  const [keypadTarget, setKeypadTarget] = useState<{ rowIndex: number; field: KeypadField } | null>(null);
+  // RPE (required before leaving this exercise) and the optional exercise
+  // note, both stored on the session_exercise row as they change. The note's
+  // initial value seeds NoteInput once; NoteInput holds the live text.
+  const [rpe, setRpe] = useState<number | null>(null);
+  const [rpeMissing, setRpeMissing] = useState(false);
+  const [initialExerciseNote, setInitialExerciseNote] = useState('');
+  const [sessionNote, setSessionNote] = useState(session.note ?? '');
+  const listRef = useRef<ScrollView>(null);
   const [pickerOpen, setPickerOpen] = useState(openPickerOnMount && !session.templateId);
   // A templated session offers today's programme day (in sequence, done
   // exercises greyed out) before falling back to the full library — the
@@ -258,13 +301,16 @@ function TransitionScreen({
     if (!sessionExerciseId || !exerciseId) return;
     let cancelled = false;
     (async () => {
-      const [existingSets, previousSessionExercise, historicalWeights, ex] = await Promise.all([
+      const [existingSets, previousSessionExercise, historicalWeights, ex, currentSe] = await Promise.all([
         listSetsBySessionExercise(db, userId, sessionExerciseId),
         getMostRecentSessionExerciseForExercise(db, userId, exerciseId, session.id),
         listHistoricalWeightsForExercise(db, userId, exerciseId),
         getExerciseById(db, userId, exerciseId),
+        getSessionExerciseById(db, userId, sessionExerciseId),
       ]);
       if (cancelled) return;
+      setRpe(currentSe?.rpe ?? null);
+      setInitialExerciseNote(currentSe?.note ?? '');
 
       const pairs = pairSides([...existingSets].sort((a, b) => a.index - b.index));
       const primary = pairs.map((p) => p.set);
@@ -294,6 +340,7 @@ function TransitionScreen({
   // needed tapping through on every first-time exercise.
   const fallback = useMemo(() => resolveFallbackSet(ghostSets), [ghostSets]);
 
+  const isCardio = exercise?.kind === 'cardio';
   const mergedRows = useMemo<MergedRow[]>(() => {
     // setsDone (the live screen's tally) is taken literally when present:
     // exactly that many rows, ghost-prefilled where history covers them,
@@ -314,9 +361,22 @@ function TransitionScreen({
           setType: set.setType,
           parentIndex: parentIndex >= 0 ? parentIndex : null,
           right: rightSets.get(set.id) ?? null,
+          distanceM: set.distanceM,
+          durationSeconds: set.durationSeconds,
+          calories: set.calories,
         });
       } else {
-        const ghost = ghostSets[i] ?? { weightKg: fallback.weightKg, reps: fallback.reps, setType: 'working' as const, parentIndex: null };
+        // A cardio station has no sensible lifting fallback (10kg × 10):
+        // blank rows start empty instead.
+        const ghost = ghostSets[i] ?? {
+          weightKg: isCardio ? 0 : fallback.weightKg,
+          reps: isCardio ? 0 : fallback.reps,
+          setType: 'working' as const,
+          parentIndex: null,
+          distanceM: null,
+          durationSeconds: null,
+          calories: null,
+        };
         rows.push({
           rowIndex: i,
           isGhost: true,
@@ -325,11 +385,14 @@ function TransitionScreen({
           setType: ghost.setType,
           parentIndex: ghost.parentIndex,
           right: null,
+          distanceM: ghost.distanceM,
+          durationSeconds: ghost.durationSeconds,
+          calories: ghost.calories,
         });
       }
     }
     return rows;
-  }, [committedSets, rightSets, ghostSets, setsDone, fallback]);
+  }, [committedSets, rightSets, ghostSets, setsDone, fallback, isCardio]);
 
   const displayOrder = useMemo(
     () => orderRowsForDisplay(mergedRows.map((r) => ({ index: r.rowIndex, parentIndex: r.parentIndex }))),
@@ -346,7 +409,15 @@ function TransitionScreen({
     return max + 1;
   }
 
-  async function commitNewSet(input: { weightKg: number; reps: number; setType: SetType; parentSetId: string | null }) {
+  async function commitNewSet(input: {
+    weightKg: number;
+    reps: number;
+    setType: SetType;
+    parentSetId: string | null;
+    distanceM?: number | null;
+    durationSeconds?: number | null;
+    calories?: number | null;
+  }) {
     if (!sessionExerciseId) return null;
     const created = await createSet(db, {
       userId,
@@ -356,6 +427,9 @@ function TransitionScreen({
       reps: input.reps,
       setType: input.setType,
       parentSetId: input.parentSetId,
+      distanceM: input.distanceM ?? null,
+      durationSeconds: input.durationSeconds ?? null,
+      calories: input.calories ?? null,
       restAfterSeconds: null,
       completedAt: new Date(),
     });
@@ -378,7 +452,7 @@ function TransitionScreen({
   // get on the way through; a row not in the map keeps its own current
   // values. Shared by the single-row edit path (commitThrough) and item 6's
   // "copy set 1 to all" (every row gets the same patch at once).
-  async function commitRowsThrough(maxIndex: number, patches: Map<number, { weightKg?: number; reps?: number; setType?: SetType }>) {
+  async function commitRowsThrough(maxIndex: number, patches: Map<number, RowPatch>) {
     if (!sessionExerciseId) return committedRef.current;
     let local = committedRef.current;
     for (let i = 0; i <= maxIndex; i++) {
@@ -401,6 +475,9 @@ function TransitionScreen({
         reps: patch?.reps ?? row.reps,
         setType: patch?.setType ?? row.setType,
         parentSetId,
+        distanceM: patch?.distanceM !== undefined ? patch.distanceM : row.distanceM,
+        durationSeconds: patch?.durationSeconds !== undefined ? patch.durationSeconds : row.durationSeconds,
+        calories: patch?.calories !== undefined ? patch.calories : row.calories,
         restAfterSeconds: null,
         completedAt: new Date(),
       });
@@ -417,11 +494,11 @@ function TransitionScreen({
     return local;
   }
 
-  async function commitThrough(targetIndex: number, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
+  async function commitThrough(targetIndex: number, patch: RowPatch) {
     await commitRowsThrough(targetIndex, new Map([[targetIndex, patch]]));
   }
 
-  function applyValueToRow(row: MergedRow, patch: { weightKg?: number; reps?: number; setType?: SetType }) {
+  function applyValueToRow(row: MergedRow, patch: RowPatch) {
     if (row.isGhost) {
       void commitThrough(row.rowIndex, patch);
       return;
@@ -440,13 +517,19 @@ function TransitionScreen({
   async function handleCopySet1ToAll() {
     const first = rowsByIndex.get(0);
     if (!first || mergedRows.length < 2) return;
-    const patches = new Map<number, { weightKg: number; reps: number }>();
+    const patches = new Map<number, RowPatch>();
     for (let i = 1; i < mergedRows.length; i++) {
       const row = rowsByIndex.get(i);
       // A left/right split set keeps its own per-side values — copying a
       // shared value onto just its left row would make the pair inconsistent.
       if (!row || row.parentIndex != null || row.right) continue;
-      patches.set(i, { weightKg: first.weightKg, reps: first.reps });
+      // Cardio copies the round's distance/calories too, never its time.
+      patches.set(
+        i,
+        isCardio
+          ? { weightKg: first.weightKg, reps: first.reps, distanceM: first.distanceM, calories: first.calories }
+          : { weightKg: first.weightKg, reps: first.reps },
+      );
     }
     await commitRowsThrough(mergedRows.length - 1, patches);
   }
@@ -475,19 +558,96 @@ function TransitionScreen({
     setKeypadTarget({ rowIndex: row.rowIndex, field: 'reps' });
   }
 
-  function handleKeypadConfirm(value: number) {
+  function handleKeypadConfirm(value: number, raw: string) {
     if (!keypadTarget) return;
     const row = rowsByIndex.get(keypadTarget.rowIndex);
     const field = keypadTarget.field;
     setKeypadTarget(null);
     if (!row) return;
-    if (field === 'weight') applyValueToRow(row, { weightKg: Math.max(0, value) });
-    else applyValueToRow(row, { reps: Math.max(0, Math.round(value)) });
+    switch (field) {
+      case 'weight':
+        applyValueToRow(row, { weightKg: Math.max(0, value) });
+        break;
+      case 'reps':
+        applyValueToRow(row, { reps: Math.max(0, Math.round(value)) });
+        break;
+      case 'distance':
+        applyValueToRow(row, { distanceM: round2(Math.max(0, value)) });
+        break;
+      case 'calories':
+        applyValueToRow(row, { calories: Math.max(0, Math.round(value)) });
+        break;
+      case 'time': {
+        // Typed as min.sec; an impossible time (e.g. 4.75) is ignored
+        // rather than guessed at.
+        const seconds = parseMinutesDotSeconds(raw);
+        if (seconds != null) applyValueToRow(row, { durationSeconds: seconds });
+        break;
+      }
+    }
+  }
+
+  // Cardio round rows (CardioRoundRow): one stepper pair per tracked value.
+  function handleCardioStep(row: MergedRow, field: CardioField, direction: 1 | -1) {
+    switch (field) {
+      case 'load':
+        handleWeightStep(row, direction);
+        break;
+      case 'reps':
+        handleRepsStep(row, direction);
+        break;
+      case 'distance':
+        applyValueToRow(row, { distanceM: round2(Math.max(0, (row.distanceM ?? 0) + direction * DISTANCE_STEP_M)) });
+        break;
+      case 'time':
+        applyValueToRow(row, { durationSeconds: Math.max(0, (row.durationSeconds ?? 0) + direction * TIME_STEP_S) });
+        break;
+      case 'calories':
+        applyValueToRow(row, { calories: Math.max(0, (row.calories ?? 0) + direction) });
+        break;
+    }
+  }
+
+  function handleCardioTap(row: MergedRow, field: CardioField) {
+    setKeypadTarget({ rowIndex: row.rowIndex, field: field === 'load' ? 'weight' : field });
+  }
+
+  // ── RPE and notes (written as they change — invariant 1) ──────────────
+  function handleRpeChange(value: number) {
+    setRpe(value);
+    setRpeMissing(false);
+    if (sessionExerciseId) void updateSessionExercise(db, userId, sessionExerciseId, { rpe: value });
+  }
+
+  function handleExerciseNoteChange(text: string) {
+    if (sessionExerciseId) void updateSessionExercise(db, userId, sessionExerciseId, { note: text.trim().length > 0 ? text : null });
+  }
+
+  function handleSessionNoteChange(text: string) {
+    setSessionNote(text);
+    void updateSession(db, userId, session.id, { note: text.trim().length > 0 ? text : null });
+  }
+
+  // RPE is required for the exercise on this screen before either exit
+  // route goes ahead; the prompt turns red and the list scrolls to it.
+  const needsRpe = !!(sessionExerciseId && exerciseId && exercise) && rpe == null;
+  function blockForMissingRpe(): boolean {
+    if (!needsRpe) return false;
+    setRpeMissing(true);
+    listRef.current?.scrollToEnd({ animated: true });
+    return true;
   }
 
   function handleAddSet() {
     const tail = committedSets[committedSets.length - 1] ?? ghostSets[ghostSets.length - 1];
-    void commitNewSet({ weightKg: tail?.weightKg ?? fallback.weightKg, reps: tail?.reps ?? fallback.reps, setType: 'working', parentSetId: null });
+    void commitNewSet({
+      weightKg: tail?.weightKg ?? (isCardio ? 0 : fallback.weightKg),
+      reps: tail?.reps ?? (isCardio ? 0 : fallback.reps),
+      setType: 'working',
+      parentSetId: null,
+      distanceM: tail?.distanceM ?? null,
+      calories: tail?.calories ?? null,
+    });
   }
 
   function handleAddDropSet(row: MergedRow) {
@@ -741,6 +901,9 @@ function TransitionScreen({
         reps: row.reps,
         setType: row.setType,
         parentSetId,
+        distanceM: row.distanceM,
+        durationSeconds: row.durationSeconds,
+        calories: row.calories,
         restAfterSeconds: null,
         completedAt: new Date(),
       });
@@ -765,11 +928,12 @@ function TransitionScreen({
     if (endArmed) {
       if (disarmTimeoutRef.current) clearTimeout(disarmTimeoutRef.current);
       setEndArmed(false);
+      if (blockForMissingRpe()) return;
       const detail = await getSessionDetail(db, userId, session.id);
       setRecapSections(
         detail.map((ex) => ({
           name: ex.exerciseName,
-          shorthand: formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—',
+          shorthand: formatLoggedExercise(ex.sets, ex) || '—',
         })),
       );
       setRecapMode('end');
@@ -783,13 +947,18 @@ function TransitionScreen({
       openNextExercisePicker();
       return;
     }
+    if (blockForMissingRpe()) return;
     const finalSets = await finalizeRemainingSets();
     setRecapSections([
       {
         name: exercise?.name ?? '',
         // Right-side rows ride along so a split set shows both sides.
         shorthand:
-          formatSessionExerciseShorthand([...finalSets, ...rightRef.current.values()], exercise?.loadConvention === 'bodyweight') || '—',
+          formatLoggedExercise([...finalSets, ...rightRef.current.values()], {
+            kind: exercise.kind,
+            track: exercise.track,
+            isBodyweight: exercise.loadConvention === 'bodyweight',
+          }) || '—',
       },
     ]);
     setRecapMode('exercise');
@@ -848,7 +1017,7 @@ function TransitionScreen({
       }
     }
   }
-  const canSplitSides = exercise ? supportsSideSplit(exercise.loadConvention, exercise.equipmentType) : false;
+  const canSplitSides = exercise ? exercise.kind === 'strength' && supportsSideSplit(exercise.loadConvention, exercise.equipmentType) : false;
   const splitRow = splitRowIndex != null ? (rowsByIndex.get(splitRowIndex) ?? null) : null;
 
   return (
@@ -877,7 +1046,7 @@ function TransitionScreen({
             <Text style={[type.body, styles.emptyStateText]}>{strings.transitionNoExerciseMessage}</Text>
           </View>
         ) : !loaded ? null : (
-          <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+          <ScrollView ref={listRef} style={styles.list} contentContainerStyle={styles.listContent}>
             {exercise
               ? displayOrder.map((rowIndex) => {
                   const row = rowsByIndex.get(rowIndex);
@@ -888,6 +1057,26 @@ function TransitionScreen({
                     ? deriveSplitLoadDisplay(exercise.equipmentType, row.weightKg, row.right.weightKg)
                     : deriveLoadDisplay(exercise.loadConvention, exercise.equipmentType, row.weightKg);
                   const isLastCommitted = !row.isGhost && row.rowIndex === committedSets.length - 1;
+
+                  if (exercise.kind === 'cardio') {
+                    return (
+                      <CardioRoundRow
+                        key={row.rowIndex}
+                        label={strings.cardioRoundLabel(row.rowIndex + 1)}
+                        track={exercise.track ?? []}
+                        weightKg={row.weightKg}
+                        reps={row.reps}
+                        distanceM={row.distanceM}
+                        durationSeconds={row.durationSeconds}
+                        calories={row.calories}
+                        confirmed={!row.isGhost}
+                        conventionLabel={display.conventionLabel}
+                        onStep={(field, d) => handleCardioStep(row, field, d)}
+                        onTap={(field) => handleCardioTap(row, field)}
+                        onRemove={isLastCommitted ? handleRemoveLastSet : undefined}
+                      />
+                    );
+                  }
 
                   return (
                     <SetInputRow
@@ -933,6 +1122,19 @@ function TransitionScreen({
                 <Text style={[type.label, styles.addSetLabel]}>{strings.transitionCopyFirstSetButton}</Text>
               </Pressable>
             ) : null}
+
+            {exercise ? (
+              <View style={styles.notesBlock}>
+                <RpePicker value={rpe} onChange={handleRpeChange} missing={rpeMissing} />
+                <View style={styles.noteInputWrap}>
+                  <NoteInput
+                    initialValue={initialExerciseNote}
+                    placeholder={strings.exerciseNotePlaceholder}
+                    onChange={handleExerciseNoteChange}
+                  />
+                </View>
+              </View>
+            ) : null}
           </ScrollView>
         )}
 
@@ -944,7 +1146,11 @@ function TransitionScreen({
         >
           <Slab tone="primary" height={size.bottomSlab}>
             <Text style={[type.label, endArmed ? styles.onSlabTextArmed : styles.onSlabText]}>
-              {endArmed ? strings.sessionEndConfirmPrompt.toUpperCase() : strings.transitionSelectNextExerciseLabel}
+              {endArmed
+                ? strings.sessionEndConfirmPrompt.toUpperCase()
+                : needsRpe
+                  ? strings.transitionNeedsRpeLabel
+                  : strings.transitionSelectNextExerciseLabel}
             </Text>
           </Slab>
         </Pressable>
@@ -992,8 +1198,18 @@ function TransitionScreen({
 
       <NumericKeypad
         visible={keypadTarget != null}
-        label={keypadTarget?.field === 'reps' ? strings.keypadRepsLabel : strings.keypadWeightLabel}
-        allowDecimal={keypadTarget?.field !== 'reps'}
+        label={
+          keypadTarget?.field === 'reps'
+            ? strings.keypadRepsLabel
+            : keypadTarget?.field === 'distance'
+              ? strings.keypadDistanceLabel
+              : keypadTarget?.field === 'time'
+                ? strings.keypadTimeLabel
+                : keypadTarget?.field === 'calories'
+                  ? strings.keypadCaloriesLabel
+                  : strings.keypadWeightLabel
+        }
+        allowDecimal={keypadTarget?.field !== 'reps' && keypadTarget?.field !== 'calories'}
         onConfirm={handleKeypadConfirm}
         onCancel={() => setKeypadTarget(null)}
       />
@@ -1021,6 +1237,7 @@ function TransitionScreen({
         confirmLabel={recapMode === 'end' ? strings.recapEndConfirmButton : strings.recapExerciseConfirmButton}
         onConfirm={handleRecapConfirm}
         onBack={handleRecapBack}
+        sessionNote={recapMode === 'end' ? { initialValue: sessionNote, onChange: handleSessionNoteChange } : undefined}
       />
     </View>
   );
@@ -1076,6 +1293,13 @@ const styles = StyleSheet.create({
     minHeight: size.minTouchTarget,
     justifyContent: 'center',
     paddingHorizontal: 24,
+  },
+  notesBlock: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+  },
+  noteInputWrap: {
+    marginTop: 16,
   },
   addSetLabel: {
     color: color.slabSecondary,

@@ -16,7 +16,8 @@ type NumericKeypadProps = {
   visible: boolean;
   label: string;
   allowDecimal: boolean;
-  onConfirm: (value: number) => void;
+  /** `raw` is the typed text, for inputs a number loses (e.g. time as min.sec: "4.50" vs "4.5"). */
+  onConfirm: (value: number, raw: string) => void;
   onCancel: () => void;
 };
 
@@ -40,7 +41,7 @@ export function NumericKeypad({ visible, label, allowDecimal, onConfirm, onCance
 
   function handleDone() {
     const parsed = Number(buffer);
-    if (buffer.length > 0 && Number.isFinite(parsed)) onConfirm(parsed);
+    if (buffer.length > 0 && Number.isFinite(parsed)) onConfirm(parsed, buffer);
     setBuffer('');
   }
 

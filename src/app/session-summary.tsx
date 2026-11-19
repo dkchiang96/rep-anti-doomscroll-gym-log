@@ -11,7 +11,7 @@ import { getSessionById } from '@/data/repositories/sessionRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
 import type { session as sessionTable } from '@/data/schema';
 import { formatElapsed } from '@/domain/duration';
-import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
+import { formatLoggedExercise } from '@/domain/keepShorthand';
 import { strings } from '@/strings';
 import { color, size, type } from '@/theme';
 
@@ -95,7 +95,7 @@ export default function SessionSummary() {
             <View key={ex.sessionExerciseId} style={styles.exerciseRow}>
               <Text style={[type.label, styles.exerciseName]}>{ex.exerciseName.toUpperCase()}</Text>
               <Text style={[type.body, styles.exerciseShorthand]}>
-                {formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—'}
+                {formatLoggedExercise(ex.sets, ex) || '—'}
               </Text>
             </View>
           ))

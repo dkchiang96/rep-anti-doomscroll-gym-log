@@ -7,6 +7,15 @@ const LIBRARY = [
   { id: '3', name: 'Chest Supported Row', aliases: ['t bar row'] },
 ];
 
+const STRENGTH = {
+  kind: 'strength' as const,
+  track: null,
+  targetDistanceM: null,
+  targetTimeSeconds: null,
+  targetCalories: null,
+  targetLoadKg: null,
+};
+
 const DATA: ProgrammeImportData = {
   name: 'One Month. One Focus. — June',
   notes: null,
@@ -14,6 +23,8 @@ const DATA: ProgrammeImportData = {
     {
       name: 'PUSH + ABS',
       dayHint: 'Tuesday',
+      warmUp: null,
+      warmDown: null,
       exercises: [
         {
           name: 'Incline Dumbbell Press',
@@ -24,6 +35,7 @@ const DATA: ProgrammeImportData = {
           targetRepsMax: 10,
           supersetGroup: null,
           notes: '',
+          ...STRENGTH,
         },
         {
           name: 'Cable Lateral Rais', // typo — still a close fuzzy match
@@ -34,6 +46,7 @@ const DATA: ProgrammeImportData = {
           targetRepsMax: 20,
           supersetGroup: null,
           notes: '',
+          ...STRENGTH,
         },
         {
           name: 'Bulgarian Split Squat', // nothing close in the library
@@ -44,12 +57,15 @@ const DATA: ProgrammeImportData = {
           targetRepsMax: 12,
           supersetGroup: null,
           notes: '',
+          ...STRENGTH,
         },
       ],
     },
     {
       name: 'PULL',
       dayHint: null,
+      warmUp: null,
+      warmDown: null,
       exercises: [
         {
           // Same exercise repeated across templates — deduped to one row.
@@ -61,6 +77,7 @@ const DATA: ProgrammeImportData = {
           targetRepsMax: 12,
           supersetGroup: null,
           notes: '',
+          ...STRENGTH,
         },
       ],
     },
@@ -109,5 +126,44 @@ describe('autoMatchedFraction', () => {
 
   it('is 1 for an empty row set', () => {
     expect(autoMatchedFraction([])).toBe(1);
+  });
+});
+
+describe('buildProgrammeMatchRows — kind', () => {
+  it('never matches a cardio station to a strength exercise of the same name', () => {
+    const data: ProgrammeImportData = {
+      name: 'P',
+      notes: null,
+      templates: [
+        {
+          name: 'DAY',
+          dayHint: null,
+          warmUp: null,
+          warmDown: null,
+          exercises: [
+            {
+              name: 'Sled Push',
+              muscleGroup: 'Conditioning',
+              loadConvention: 'total',
+              targetSets: 3,
+              targetRepsMin: 0,
+              targetRepsMax: 0,
+              supersetGroup: null,
+              notes: '',
+              kind: 'cardio',
+              track: ['distance_m', 'load_kg', 'time'],
+              targetDistanceM: 50,
+              targetTimeSeconds: null,
+              targetCalories: null,
+              targetLoadKg: 102,
+            },
+          ],
+        },
+      ],
+    };
+    const strengthOnly = [{ id: 's', name: 'Sled Push', aliases: [], kind: 'strength' as const }];
+    expect(buildProgrammeMatchRows(data, strengthOnly)[0].decision).toEqual({ type: 'create' });
+    const withCardio = [...strengthOnly, { id: 'c', name: 'Sled Push', aliases: [], kind: 'cardio' as const }];
+    expect(buildProgrammeMatchRows(data, withCardio)[0].decision).toEqual({ type: 'accept', exerciseId: 'c' });
   });
 });

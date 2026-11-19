@@ -46,7 +46,21 @@ export const strings = {
   sessionWarmDownEndLabel: 'End workout',
   sessionRecentRoundsHeading: 'Last 3 rounds',
   // Read-only flag under the last 3 rounds (src/domain/progressReadiness.ts).
-  sessionReadyToProgress: 'Hit top of range twice — consider adding load',
+  // Progression nudges (src/domain/progressReadiness.ts), keyed by advice.
+  progressAdvice: {
+    add_load_easy: 'Easy at top of range last time — add load',
+    add_load_twice: 'Hit top of range twice — consider adding load',
+    push_reps: 'Low RPE last time — push for more reps',
+  },
+  // Free-text warm-up / warm-down from the programme day, shown on the timer
+  // screen's warm-up and warm-down states.
+  sessionWarmUpNoteHeading: "Today's warm-up",
+  // Cardio lap timer (src/components/ui/LapButton.tsx).
+  lapStartLabel: 'Start lap',
+  lapStopLabel: 'Stop lap',
+  lapRoundsLabel: (done: number, target: number | null) =>
+    target != null ? `Round ${done} of ${target} done · hold to discard a lap` : `${done} rounds done · hold to discard a lap`,
+  sessionWarmDownNoteHeading: "Today's warm-down",
   sessionTransportStartLabel: 'Start',
   sessionTransportPauseLabel: 'Pause',
   sessionNextExerciseLabel: 'Next exercise',
@@ -107,7 +121,8 @@ export const strings = {
     `${sessions} sessions, ${exercises} exercises, ${sets} sets imported.`,
   importDoneButton: 'Done',
 
-  sessionNotePlaceholder: 'Session note…',
+  sessionNotePlaceholder: 'Session note (optional) — e.g. feeling sick, slept badly',
+  sessionNoteHeading: 'Session note',
   sessionAddExerciseButton: '+ Add exercise',
 
   restClockLabel: 'Rest',
@@ -123,7 +138,11 @@ export const strings = {
   targetRestLabel: (seconds: number) => `Target rest ${seconds}s`,
   targetRestEditLabel: 'Target rest (s)',
 
-  exerciseNotePlaceholder: 'Exercise note…',
+  exerciseNotePlaceholder: 'Note (optional) — e.g. poor form on the last set',
+  // RPE (src/components/ui/RpePicker.tsx): required per exercise.
+  rpeHeading: 'RPE — how hard was it? (1–10)',
+  rpeRequiredPrompt: 'Set RPE to continue (1–10)',
+  transitionNeedsRpeLabel: 'SET RPE TO CONTINUE',
   exerciseAddSet: '+ Add set',
   exerciseSkipToggle: 'SKIP',
   exerciseSupersetToggle: 'SS',
@@ -141,6 +160,14 @@ export const strings = {
   keypadCancel: 'Cancel',
   keypadWeightLabel: 'Weight (kg)',
   keypadRepsLabel: 'Reps',
+  keypadDistanceLabel: 'Distance (m)',
+  keypadTimeLabel: 'Time (min.sec, e.g. 4.05)',
+  keypadCaloriesLabel: 'Calories',
+  // Cardio round rows (src/components/ui/CardioRoundRow.tsx).
+  cardioDistanceHeading: 'Metres',
+  cardioTimeHeading: 'Time',
+  cardioCaloriesHeading: 'Cal',
+  cardioRoundLabel: (n: number) => `Round ${n}`,
 
   addExerciseTitle: 'Add exercise',
   addExerciseClose: 'Close',

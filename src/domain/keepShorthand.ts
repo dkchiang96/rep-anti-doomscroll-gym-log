@@ -9,10 +9,21 @@
 // "20kg 10/8" when the weights match, "20/17.5kg 10" when only the weights
 // differ, "20/17.5kg 10/8" when both do — left first.
 
+import { formatCardioShorthand, type CardioMetric, type CardioRound, type ExerciseKind } from './cardio';
 import { pairSides, type SideTaggable } from './sidePairs';
 
 export interface ShorthandSet extends SideTaggable {
   setType: 'working' | 'warmup' | 'dropset' | 'failure';
+}
+
+// One logged exercise's line, whichever kind it is: cardio stations use
+// the round shorthand (src/domain/cardio.ts), strength the Keep grammar.
+export function formatLoggedExercise(
+  sets: (ShorthandSet & Omit<CardioRound, 'setType'>)[],
+  exercise: { kind?: ExerciseKind; track?: CardioMetric[] | null; isBodyweight: boolean },
+): string {
+  if (exercise.kind === 'cardio') return formatCardioShorthand(sets, exercise.track ?? []);
+  return formatSessionExerciseShorthand(sets, exercise.isBodyweight);
 }
 
 export function formatSessionExerciseShorthand(sets: ShorthandSet[], isBodyweight: boolean): string {

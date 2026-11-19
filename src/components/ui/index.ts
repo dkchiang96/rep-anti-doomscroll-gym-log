@@ -1,7 +1,11 @@
+export { CardioRoundRow, type CardioField } from './CardioRoundRow';
 export { Clock } from './Clock';
 export { FlashOverlay, type FlashOverlayHandle } from './FlashOverlay';
 export { FontGate, useClockMetrics } from './FontGate';
+export { LapButton } from './LapButton';
 export { ListRow, type ListRowProps } from './ListRow';
+export { NoteInput } from './NoteInput';
+export { RpePicker } from './RpePicker';
 export { SetInputRow } from './SetInputRow';
 export { Slab } from './Slab';
 export { StepperButton } from './StepperButton';

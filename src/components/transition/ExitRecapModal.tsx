@@ -1,4 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { NoteInput } from '@/components/ui/NoteInput';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { strings } from '@/strings';
@@ -23,9 +25,11 @@ type ExitRecapModalProps = {
   confirmLabel: string;
   onConfirm: () => void;
   onBack: () => void;
+  /** End-of-workout recap only: the optional session note, written as you type. */
+  sessionNote?: { initialValue: string; onChange: (text: string) => void };
 };
 
-export function ExitRecapModal({ visible, title, sections, confirmLabel, onConfirm, onBack }: ExitRecapModalProps) {
+export function ExitRecapModal({ visible, title, sections, confirmLabel, onConfirm, onBack, sessionNote }: ExitRecapModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onBack}>
       <View style={styles.backdrop}>
@@ -48,6 +52,17 @@ export function ExitRecapModal({ visible, title, sections, confirmLabel, onConfi
               ))
             )}
           </View>
+
+          {sessionNote ? (
+            <View style={styles.noteBlock}>
+              <Text style={[type.caption, styles.noteHeading]}>{strings.sessionNoteHeading}</Text>
+              <NoteInput
+                initialValue={sessionNote.initialValue}
+                placeholder={strings.sessionNotePlaceholder}
+                onChange={sessionNote.onChange}
+              />
+            </View>
+          ) : null}
 
           <View style={styles.actions}>
             <Pressable onPress={onBack} style={styles.backTouch}>
@@ -94,6 +109,13 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: color.textMuted,
+  },
+  noteBlock: {
+    marginTop: 16,
+  },
+  noteHeading: {
+    color: color.textMuted,
+    marginBottom: 6,
   },
   actions: {
     flexDirection: 'row',

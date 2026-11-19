@@ -4,7 +4,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { cancelRestNotifications, Clock, FlashOverlay, Slab, TransportButton, TransportResetButton, useRestNotifications } from '@/components/ui';
+import {
+  cancelRestNotifications,
+  Clock,
+  FlashOverlay,
+  LapButton,
+  Slab,
+  TransportButton,
+  TransportResetButton,
+  useRestNotifications,
+} from '@/components/ui';
 import type { FlashOverlayHandle } from '@/components/ui';
 import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
 import { runBackupRetention } from '@/data/backup';
@@ -13,14 +22,17 @@ import { getExerciseById } from '@/data/repositories/exerciseRepository';
 import { getSessionDetail } from '@/data/repositories/historyRepository';
 import { getProgrammeById } from '@/data/repositories/programmeRepository';
 import { listSessionHistoryForExercise } from '@/data/repositories/progressRepository';
-import { endSession, getActiveSession } from '@/data/repositories/sessionRepository';
+import { getSessionExerciseById } from '@/data/repositories/sessionExerciseRepository';
+import { endSession, getActiveSession, updateSession } from '@/data/repositories/sessionRepository';
+import { cancelCardioLap, listSetsBySessionExercise, startCardioLap, stopCardioLap } from '@/data/repositories/setRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import { getTemplateById } from '@/data/repositories/templateRepository';
 import { getUser } from '@/data/repositories/userRepository';
 import type { session as sessionTable } from '@/data/schema';
 import type { EquipmentType, LoadConvention } from '@/domain/loadConvention';
-import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
-import { isReadyToProgress } from '@/domain/progressReadiness';
+import { formatLoggedExercise, formatSessionExerciseShorthand } from '@/domain/keepShorthand';
+import { formatCardioShorthand, formatCardioTarget, tracks, type CardioMetric, type ExerciseKind } from '@/domain/cardio';
+import { progressAdvice, type ProgressAdvice } from '@/domain/progressReadiness';
 import { didCrossInterval } from '@/domain/stopwatch';
 import { useAttachStopwatch, useStopwatch } from '@/state/stopwatchStore';
 import { useFlashPreferenceStore } from '@/state/flashPreferenceStore';
@@ -49,10 +61,22 @@ type CurrentExercise = {
   equipmentType: EquipmentType;
   loadConvention: LoadConvention;
   barWeightKg: number | null;
+  kind: ExerciseKind;
+  /** Cardio only: what each round records. */
+  track: CardioMetric[] | null;
   // Null when the exercise was picked mid-session (R5's exercise picker) and
   // isn't part of the active template — the lime slab falls back to the
-  // FREESTYLE label in that case, same as a templateless session.
-  target: { sets: number; repsMin: number; repsMax: number } | null;
+  // FREESTYLE label in that case, same as a templateless session. The
+  // distance/time/calories/load fields are cardio per-round targets.
+  target: {
+    sets: number;
+    repsMin: number;
+    repsMax: number;
+    distanceM: number | null;
+    timeSeconds: number | null;
+    calories: number | null;
+    loadKg: number | null;
+  } | null;
 } | null;
 
 type LoadState =
@@ -63,6 +87,8 @@ type LoadState =
       session: Session;
       title: string;
       exercise: CurrentExercise;
+      // The programme day's free-text warm-up / warm-down (template).
+      dayNotes: { warmUp: string | null; warmDown: string | null };
       flashIntervalMs: number;
       notificationsEnabled: boolean;
     };
@@ -110,7 +136,15 @@ export default function LiveSession() {
     let cancelled = false;
     const overrideTarget =
       Number.isFinite(overrideTargetSets) && Number.isFinite(overrideTargetRepsMin) && Number.isFinite(overrideTargetRepsMax)
-        ? { sets: overrideTargetSets, repsMin: overrideTargetRepsMin, repsMax: overrideTargetRepsMax }
+        ? {
+            sets: overrideTargetSets,
+            repsMin: overrideTargetRepsMin,
+            repsMax: overrideTargetRepsMax,
+            distanceM: null,
+            timeSeconds: null,
+            calories: null,
+            loadKg: null,
+          }
         : null;
     (async () => {
       const active = await getActiveSession(db, userId);
@@ -125,9 +159,13 @@ export default function LiveSession() {
 
       let title: string = strings.sessionPlaceholderFreestyleTitle;
       let templateExercises: Awaited<ReturnType<typeof listTemplateExercisesByTemplate>> = [];
+      let dayNotes: { warmUp: string | null; warmDown: string | null } = { warmUp: null, warmDown: null };
       if (active.templateId) {
         const template = await getTemplateById(db, userId, active.templateId);
-        if (template) title = template.name;
+        if (template) {
+          title = template.name;
+          dayNotes = { warmUp: template.warmUp, warmDown: template.warmDown };
+        }
         templateExercises = await listTemplateExercisesByTemplate(db, userId, active.templateId);
       } else if (active.programmeId) {
         // Item 3: a freestyle session still tagged to the active programme
@@ -155,8 +193,18 @@ export default function LiveSession() {
             equipmentType: ex.equipmentType,
             loadConvention: ex.loadConvention,
             barWeightKg: ex.barWeightKg,
+            kind: ex.kind,
+            track: ex.track,
             target: overrideTarget ?? (templateExercise
-              ? { sets: templateExercise.targetSets, repsMin: templateExercise.targetRepsMin, repsMax: templateExercise.targetRepsMax }
+              ? {
+                  sets: templateExercise.targetSets,
+                  repsMin: templateExercise.targetRepsMin,
+                  repsMax: templateExercise.targetRepsMax,
+                  distanceM: templateExercise.targetDistanceM,
+                  timeSeconds: templateExercise.targetTimeSeconds,
+                  calories: templateExercise.targetCalories,
+                  loadKg: templateExercise.targetLoadKg,
+                }
               : null),
           };
         }
@@ -168,7 +216,7 @@ export default function LiveSession() {
       // (transition.tsx), which lists this template's exercises in the
       // programme's own sequence.
 
-      if (!cancelled) setState({ status: 'ready', session: active, title, exercise, flashIntervalMs, notificationsEnabled });
+      if (!cancelled) setState({ status: 'ready', session: active, title, exercise, dayNotes, flashIntervalMs, notificationsEnabled });
     })();
     return () => {
       cancelled = true;
@@ -216,7 +264,7 @@ function LiveSessionScreen({
   warmDown: boolean;
   onNextExercise: (setsDone: number) => void;
 }) {
-  const { session, title, exercise, flashIntervalMs, notificationsEnabled } = state;
+  const { session, title, exercise, dayNotes, flashIntervalMs, notificationsEnabled } = state;
   const router = useRouter();
   useAttachStopwatch(db, userId, session);
   const stopwatch = useStopwatch();
@@ -232,10 +280,10 @@ function LiveSessionScreen({
   // deciding what to target — excludes the current (still-empty at this
   // point) session.
   const [recentRounds, setRecentRounds] = useState<{ sessionId: string; label: string }[]>([]);
-  // Read-only nudge (src/domain/progressReadiness.ts): the last two sessions
-  // both hit the top of the target range at one weight. Needs a target, so
-  // never shows for freestyle/ad-hoc exercises.
-  const [readyToProgress, setReadyToProgress] = useState(false);
+  // Read-only nudge (src/domain/progressReadiness.ts), from the last
+  // sessions' RPE and reps. Needs a target, so never shows for freestyle/
+  // ad-hoc exercises; strength only.
+  const [advice, setAdvice] = useState<ProgressAdvice | null>(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -250,10 +298,14 @@ function LiveSessionScreen({
         .slice(0, 3)
         .map((entry) => ({
           sessionId: entry.sessionId,
-          label: `${formatRecentRoundDate(entry.startedAt)} — ${formatSessionExerciseShorthand(entry.sets, isBodyweight) || '—'}`,
+          label: `${formatRecentRoundDate(entry.startedAt)} — ${
+            (exercise?.kind === 'cardio'
+              ? formatCardioShorthand(entry.sets, exercise.track ?? [])
+              : formatSessionExerciseShorthand(entry.sets, isBodyweight)) || '—'
+          }`,
         }));
       setRecentRounds(rounds);
-      setReadyToProgress(exercise?.target ? isReadyToProgress(previous, exercise.target.repsMax) : false);
+      setAdvice(exercise?.kind === 'strength' && exercise.target ? progressAdvice(previous, exercise.target.repsMax) : null);
     })();
     return () => {
       cancelled = true;
@@ -268,6 +320,12 @@ function LiveSessionScreen({
   const [endArmed, setEndArmed] = useState(false);
   const disarmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recapOpen, setRecapOpen] = useState(false);
+  // Optional session note, written as you type on the end-of-workout recap.
+  const [sessionNote, setSessionNote] = useState(session.note ?? '');
+  function handleSessionNoteChange(text: string) {
+    setSessionNote(text);
+    void updateSession(db, userId, session.id, { note: text.trim().length > 0 ? text : null });
+  }
   const [recapSections, setRecapSections] = useState<RecapSection[]>([]);
 
   useEffect(() => {
@@ -287,7 +345,7 @@ function LiveSessionScreen({
     setRecapSections(
       detail.map((ex) => ({
         name: ex.exerciseName,
-        shorthand: formatSessionExerciseShorthand(ex.sets, ex.isBodyweight) || '—',
+        shorthand: formatLoggedExercise(ex.sets, ex) || '—',
       })),
     );
     setRecapOpen(true);
@@ -361,6 +419,66 @@ function LiveSessionScreen({
     }
   }, [exerciseKey]);
 
+  // Cardio lap timer (src/components/ui/LapButton.tsx) — replaces the tally
+  // for a cardio station that tracks time. The running lap's start lives on
+  // the session_exercise row, so it's reloaded here (as is the count of
+  // rounds already recorded) and survives the app being killed.
+  const usesLap = exercise?.kind === 'cardio' && tracks(exercise.track, 'time');
+  const [lapStartedAt, setLapStartedAt] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!exercise || !usesLap) return;
+      const [se, rounds] = await Promise.all([
+        getSessionExerciseById(db, userId, exercise.sessionExerciseId),
+        listSetsBySessionExercise(db, userId, exercise.sessionExerciseId),
+      ]);
+      if (cancelled) return;
+      setLapStartedAt(se?.lapStartedAt ? se.lapStartedAt.getTime() : null);
+      setSetsDone(rounds.length);
+      setNowMs(Date.now());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, userId, exercise, usesLap]);
+  useEffect(() => {
+    if (lapStartedAt == null) return undefined;
+    const interval = setInterval(() => setNowMs(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, [lapStartedAt]);
+
+  async function handleLapStart() {
+    if (!exercise) return;
+    const startedAt = new Date();
+    await startCardioLap(db, userId, exercise.sessionExerciseId, startedAt);
+    setNowMs(startedAt.getTime());
+    setLapStartedAt(startedAt.getTime());
+  }
+
+  async function handleLapStop() {
+    if (!exercise) return;
+    const target = exercise.target;
+    const track = exercise.track ?? [];
+    // The round starts at the station's per-round targets; the real
+    // numbers are corrected on the logging screen if they differ.
+    const created = await stopCardioLap(db, userId, exercise.sessionExerciseId, {
+      weightKg: tracks(track, 'load_kg') ? (target?.loadKg ?? 0) : 0,
+      reps: tracks(track, 'reps') ? (target?.repsMax ?? 0) : 0,
+      distanceM: tracks(track, 'distance_m') ? (target?.distanceM ?? null) : null,
+      calories: tracks(track, 'calories') ? (target?.calories ?? null) : null,
+    });
+    setLapStartedAt(null);
+    if (created) setSetsDone((n) => n + 1);
+  }
+
+  async function handleLapCancel() {
+    if (!exercise) return;
+    await cancelCardioLap(db, userId, exercise.sessionExerciseId);
+    setLapStartedAt(null);
+  }
+
   // Distinct from the top bar's session-level title (which legitimately
   // reads FREESTYLE for a templateless session) — reusing the same word here
   // for "no exercise picked yet" read as a duplicated/broken label.
@@ -389,6 +507,13 @@ function LiveSessionScreen({
         <Slab tone="secondary" flex={liveZoneFlex.lime}>
           {warmDown ? (
             <Text style={[type.label, styles.onSlabText]}>{strings.sessionWarmDownHint.toUpperCase()}</Text>
+          ) : exercise?.kind === 'cardio' && exercise.target ? (
+            <>
+              <Text style={[type.label, styles.onSlabText]}>{strings.sessionTargetHeading}</Text>
+              <Text style={[type.display2, styles.onSlabText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                {formatCardioTarget(exercise.target, exercise.track ?? []).toUpperCase()}
+              </Text>
+            </>
           ) : exercise?.target ? (
             <>
               <Text style={[type.label, styles.onSlabText]}>{strings.sessionTargetHeading}</Text>
@@ -419,16 +544,44 @@ function LiveSessionScreen({
                 {round.label}
               </Text>
             ))}
-            {readyToProgress ? (
+            {advice ? (
               <Text style={[type.label, styles.readyToProgressLine]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                {strings.sessionReadyToProgress}
+                {strings.progressAdvice[advice]}
               </Text>
             ) : null}
           </View>
         ) : null}
 
+        {/* The programme day's free-text warm-up / warm-down: shown in the
+            warm-up state (no exercise yet) and the warm-down state, in the
+            space Last 3 rounds uses once an exercise is picked. */}
+        {(() => {
+          const dayNote = warmDown ? dayNotes.warmDown : !exercise ? dayNotes.warmUp : null;
+          if (!dayNote) return null;
+          return (
+            <View style={styles.recentRoundsStrip}>
+              <Text style={[type.caption, styles.recentRoundsHeading]}>
+                {warmDown ? strings.sessionWarmDownNoteHeading : strings.sessionWarmUpNoteHeading}
+              </Text>
+              <Text style={[type.heading, styles.recentRoundsLine]} numberOfLines={5} adjustsFontSizeToFit minimumFontScale={0.5}>
+                {dayNote}
+              </Text>
+            </View>
+          );
+        })()}
+
         <View style={[styles.canvas, { flex: liveZoneFlex.canvas }]}>
-          {warmDown ? null : (
+          {warmDown ? null : usesLap ? (
+            <LapButton
+              running={lapStartedAt != null}
+              lapElapsedSeconds={lapStartedAt != null ? Math.max(0, (nowMs - lapStartedAt) / 1000) : 0}
+              roundsDone={setsDone}
+              targetRounds={exercise?.target?.sets ?? null}
+              onStart={() => void handleLapStart()}
+              onStop={() => void handleLapStop()}
+              onCancel={() => void handleLapCancel()}
+            />
+          ) : (
             <Pressable
               style={styles.setsDoneTouch}
               onPress={() => setSetsDone((n) => n + 1)}
@@ -477,6 +630,7 @@ function LiveSessionScreen({
         confirmLabel={strings.recapEndConfirmButton}
         onConfirm={() => void handleRecapConfirm()}
         onBack={() => setRecapOpen(false)}
+        sessionNote={{ initialValue: sessionNote, onChange: handleSessionNoteChange }}
       />
     </View>
   );

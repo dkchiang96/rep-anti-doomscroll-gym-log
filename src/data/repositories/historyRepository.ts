@@ -33,6 +33,10 @@ export interface SessionDetailExercise {
   exerciseId: string;
   exerciseName: string;
   isBodyweight: boolean;
+  kind: 'strength' | 'cardio';
+  track: typeof exercise.$inferSelect.track;
+  rpe: number | null;
+  note: string | null;
   sets: {
     id: string;
     weightKg: number;
@@ -41,6 +45,9 @@ export interface SessionDetailExercise {
     // Left/right tracking — see src/domain/sidePairs.ts.
     side: typeof setEntry.$inferSelect.side;
     parentSetId: string | null;
+    distanceM: number | null;
+    durationSeconds: number | null;
+    calories: number | null;
   }[];
 }
 
@@ -58,6 +65,10 @@ export async function getSessionDetail(
       exerciseId: exercise.id,
       exerciseName: exercise.name,
       loadConvention: exercise.loadConvention,
+      kind: exercise.kind,
+      track: exercise.track,
+      rpe: sessionExercise.rpe,
+      note: sessionExercise.note,
     })
     .from(sessionExercise)
     .innerJoin(exercise, eq(exercise.id, sessionExercise.exerciseId))
@@ -81,6 +92,9 @@ export async function getSessionDetail(
         setType: setEntry.setType,
         side: setEntry.side,
         parentSetId: setEntry.parentSetId,
+        distanceM: setEntry.distanceM,
+        durationSeconds: setEntry.durationSeconds,
+        calories: setEntry.calories,
       })
       .from(setEntry)
       .where(
@@ -97,6 +111,10 @@ export async function getSessionDetail(
       exerciseId: row.exerciseId,
       exerciseName: row.exerciseName,
       isBodyweight: row.loadConvention === 'bodyweight',
+      kind: row.kind,
+      track: row.track,
+      rpe: row.rpe,
+      note: row.note,
       sets: setRows,
     });
   }
