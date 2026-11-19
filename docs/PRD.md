@@ -447,6 +447,8 @@ The stated bar is that capture must not be slower than typing. Realistic photo f
 
 ## Appendix A — Programme import schema
 
+> **Superseded (2026-11-19):** the current format is schema **1.1**, documented with a worked example and full field rules in [`docs/PROGRAMME-PROMPT.md`](PROGRAMME-PROMPT.md). 1.1 adds per-day `warm_up` / `warm_down` text and cardio / Hyrox stations (`kind`, `track`, cardio targets), and the muscle groups are now `Chest, Back, Shoulders, Biceps, Triceps, Legs, Core, Forearms, Neck, Conditioning`. Version 1.0 files like the one below still import unchanged.
+
 ```json
 {
   "schema_version": "1.0",
@@ -493,6 +495,8 @@ The stated bar is that capture must not be slower than typing. Realistic photo f
 - All fields except `notes`, `day_hint` and `superset_group` are required
 
 ## Appendix B — Prompt for generating a programme
+
+> **Superseded (2026-11-19):** use [`docs/PROGRAMME-PROMPT.md`](PROGRAMME-PROMPT.md). It plans as well as converts, keeps warm-ups, warm-downs and cardio instead of omitting them, and reads REP's CSV export (RPE and notes) to decide progression. The original prompt is kept below for history.
 
 > I have a training programme below. Convert it into JSON matching this exact schema, and output **only** the JSON with no commentary, no markdown fences and no explanation.
 >

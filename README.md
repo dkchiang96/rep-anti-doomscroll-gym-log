@@ -67,7 +67,7 @@ I do own one, but it has never fitted how I train. Keeping it charged is one mor
 
 My health reports, body composition scans and training goals are kept in a separate Claude project, which is where my programmes are written. None of that personal data is included in this repository.
 
-Each programme is exported as a JSON file in a fixed format ([PRD Appendix A](docs/PRD.md)). REP validates the file strictly before importing it, and any error names the affected field in plain language, so an invalid file never reaches the database. REP then runs the sessions, and its history, progress chart and CSV/JSON export inform the next round of planning.
+Each programme is exported as a JSON file in a fixed format, produced by handing any LLM the ready-to-paste prompt in [docs/PROGRAMME-PROMPT.md](docs/PROGRAMME-PROMPT.md) (schema 1.1: training days with warm-up/warm-down notes, strength exercises and cardio/Hyrox stations). REP validates the file strictly before importing it, and any error names the affected field in plain language, so an invalid file never reaches the database. REP then runs the sessions, and its history, progress chart and CSV/JSON export inform the next round of planning.
 
 ## How it was built
 
