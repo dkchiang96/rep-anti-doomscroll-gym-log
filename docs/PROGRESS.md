@@ -707,3 +707,46 @@ Not a numbered session; repo tidy-up ahead of showing the project publicly.
 - PRD Phase 3: the programme constraint now lists the exercise exclusions without the medical reason.
 - "Clone" wording in `PRD.md` §5 and `DESIGN-SPEC.md` §5.1 changed to "modelled on"; no change to what was built.
 - History rewritten and force-pushed by the author: every commit now uses the GitHub noreply address, and the Timer Plus screenshot and the PRD's medical reason are absent from all commits. Verified against `origin/master`. Pre-rewrite backup kept outside the repo as `rep-backup-before-privacy-rewrite.bundle`.
+
+## 2026-11-19 — tweak: readable "Last 3 rounds" on the live screen
+
+Not a numbered session; requested so the last three rounds can be read from the bench without picking the phone up.
+
+- `session.tsx`: the three round lines go from `caption` (14dp, muted) to `heading` (28dp, `textPrimary`, tabular numerals), one line each with `adjustsFontSizeToFit` down to 0.7× so a long shorthand line shrinks rather than truncates. The "Last 3 rounds" heading stays small and muted.
+- Space comes from the yellow zone: `liveZoneFlex.yellow` 44 → 40 (lime and canvas unchanged).
+- `Clock.tsx` hero width target 0.95/0.9 → 0.8/0.75 of viewport width, because the clock sizes by width, not height, and would otherwise clip in the shorter yellow zone. The clock remains the largest element (§5.1). Also affects `showcase.tsx`, which reads the same tokens.
+- Screen lock while the app is kept awake: no code change. Resolved with Samsung's built-in **Pin app** (Settings → Security and privacy → More security settings → Pin app, with "Ask for PIN before unpinning"). A show-over-lock-screen option and an auto-lock-on-exit (device admin) option were considered and not taken.
+
+**Exit check:** `npm run typecheck` and `npm run test` (33 suites, 165 tests) pass. No device here — on-device: check on the S23 that the clock digits are not clipped, the lime target still fits, and a long round line shrinks to fit. JS-only: Metro reload for a dev build, a rebuild for an APK.
+
+## 2026-11-19 — feature: left/right tracking and ready-to-progress flag
+
+Not a numbered session. Requested for tracking asymmetry on unilateral lifts. Product decisions confirmed with the author before building: only non-barbell per_side lifts (a barbell's plates must match), the logging screen stays as it was with a separate split screen opened from a per-set button, a split set counts as one set everywhere else, and the flag goes on the timer screen.
+
+**Data**
+- `set.side` (`'left' | 'right' | null`) added by migration `0006_rapid_maggott.sql` (`ALTER TABLE set ADD side text`, additive). Existing sets stay null and mean one shared (bilateral) value.
+- A split set is stored as two rows: the original is tagged `left`, and a `right` row is appended with the next free index and `parent_set_id` pointing at the left row. That is the same attachment drop sets use, so no existing row is reindexed. `setRepository.splitSetIntoSides` / `joinSides`. Joining soft-deletes the right row (invariant 5) and keeps the left values.
+- Because a right row takes an index, stored `index` no longer always equals the row's position on the logging screen. `transition.tsx` now uses `nextSetIndex()` (max + 1 across all rows) wherever it used `committedSets.length`.
+
+**Pure logic** (all tested): `src/domain/sidePairs.ts` (pairing, the weaker side, the split total, `supportsSideSplit`), and `src/domain/progressReadiness.ts`.
+- **Shorthand:** a split set shows as `20kg 10/8`, `20/17.5kg 10` or `20/17.5kg 10/8` (left first). An even split reads like an unsplit set.
+- **Weaker side:** the chart's top set, ghost pre-fill (a split set pre-fills as one unsplit row at its weaker side), save-as-template targets and the readiness check all use the weaker side.
+- **CSV export:** gains a `side` column. On a split pair, both rows' `total_kg` is left + right, as requested, so summing `total_kg` counts a split set twice. Unsplit rows are unchanged (`weight_kg × 2` for per_side). The JSON export carries `side` automatically.
+
+**UI**
+- **Logging screen:** eligible rows (non-barbell per_side; not warm-ups or drop sets) get an **L / R** button. It opens `SideSplitScreen`: a full-screen page with Left and Right weight/reps rows and the left + right total. Each change writes immediately; nothing is written if left untouched.
+  - **Writes:** the first change on a still-ghost row commits it first, exactly as editing it on the logging screen does. Writes are queued so a held stepper can't create duplicate right rows.
+  - **Make even again** joins the two sides back into one value. **Back to sets** only closes the page; there is no save step.
+  - **On the logging screen:** a split set's row shows a read-only `L 20 × 10   R 20 × 8` summary with the left + right total. Removing the last set removes both sides. "Copy set 1 to all" skips split sets.
+- **Timer screen:** a green "Hit top of range twice — consider adding load" line under Last 3 rounds.
+  - **When it shows:** both of the last two previous sessions hit `target_reps_max` on every working set at one weight, the same in both. A split set is judged by its weaker side.
+  - **Only with a target:** it only shows for exercises with a programme target.
+
+**Deviations from the request:** left/right is limited to non-barbell per_side lifts, and the flag is on the timer screen rather than the logging screen. Both were confirmed with the author.
+
+**Exit check:** `npm run typecheck`, `npm run test` (36 suites, 195 tests, up from 165: new `sidePairs`, `progressReadiness` and `sideSplit` repository suites, plus split cases added to the shorthand, chart, ghost, export and load-display tests), `npm run lint` and `npx expo export --platform android` all pass. No device here. **Needs a new build** (schema migration); a Metro reload alone won't apply it. To check on device:
+- split a dumbbell set, change one side, back out and confirm the summary and total
+- confirm a barbell lift has no L / R button
+- "Make even again"
+- export a CSV and check the `side` column
+- set up two sessions at the top of the range and confirm the flag appears

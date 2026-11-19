@@ -21,6 +21,9 @@ export async function listSetExportRows(db: AppDatabase, userId: string, since?:
       weightKg: setEntry.weightKg,
       reps: setEntry.reps,
       setType: setEntry.setType,
+      setId: setEntry.id,
+      parentSetId: setEntry.parentSetId,
+      side: setEntry.side,
     })
     .from(setEntry)
     .innerJoin(sessionExercise, eq(sessionExercise.id, setEntry.sessionExerciseId))

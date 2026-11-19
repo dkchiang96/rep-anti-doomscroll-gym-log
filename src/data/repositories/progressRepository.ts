@@ -10,9 +10,13 @@ export interface ProgressSessionEntry {
   // offers delete for a finished one.
   endedAt: Date | null;
   sets: {
+    id: string;
     weightKg: number;
     reps: number;
     setType: typeof setEntry.$inferSelect.setType;
+    // Left/right tracking — see src/domain/sidePairs.ts.
+    side: typeof setEntry.$inferSelect.side;
+    parentSetId: string | null;
   }[];
 }
 
@@ -34,6 +38,9 @@ export async function listSessionHistoryForExercise(
       weightKg: setEntry.weightKg,
       reps: setEntry.reps,
       setType: setEntry.setType,
+      setId: setEntry.id,
+      side: setEntry.side,
+      parentSetId: setEntry.parentSetId,
     })
     .from(setEntry)
     .innerJoin(sessionExercise, eq(sessionExercise.id, setEntry.sessionExerciseId))
@@ -56,7 +63,14 @@ export async function listSessionHistoryForExercise(
       entry = { sessionId: row.sessionId, startedAt: row.startedAt, endedAt: row.endedAt, sets: [] };
       bySession.set(row.sessionId, entry);
     }
-    entry.sets.push({ weightKg: row.weightKg, reps: row.reps, setType: row.setType });
+    entry.sets.push({
+      id: row.setId,
+      weightKg: row.weightKg,
+      reps: row.reps,
+      setType: row.setType,
+      side: row.side,
+      parentSetId: row.parentSetId,
+    });
   }
 
   return Array.from(bySession.values()).sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());

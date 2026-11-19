@@ -37,7 +37,9 @@ export function Clock({ elapsedMs, variant = 'hero' }: ClockProps) {
   }
 
   const digitCount = text.length - 1; // total chars minus the one colon
-  const targetFraction = digitCount <= 4 ? 0.95 : 0.9;
+  // 0.8/0.75 (was 0.95/0.9): trimmed so the yellow zone could shrink to make
+  // room for the larger "Last 3 rounds" strip without clipping the digits.
+  const targetFraction = digitCount <= 4 ? 0.8 : 0.75;
   const targetWidth = width * targetFraction;
   const unitWidth = metrics.digitWidthPerUnit * digitCount + metrics.colonWidthPerUnit;
   const fontSize = targetWidth / unitWidth;

@@ -48,3 +48,21 @@ describe('resolveFallbackSet', () => {
     expect(resolveFallbackSet(ghosts)).toEqual({ weightKg: 22.5, reps: 8 });
   });
 });
+
+describe('buildGhostSets — left/right split sets', () => {
+  it('pre-fills a split set as one unsplit row at its weaker side, keeping drop-set attachment', () => {
+    const previous: PreviousSet[] = [
+      { id: 'a', index: 0, weightKg: 20, reps: 10, setType: 'working', parentSetId: null, side: 'left' },
+      { id: 'b', index: 1, weightKg: 20, reps: 10, setType: 'working', parentSetId: null, side: null },
+      { id: 'r', index: 2, weightKg: 20, reps: 8, setType: 'working', parentSetId: 'a', side: 'right' },
+      { id: 'd', index: 3, weightKg: 10, reps: 12, setType: 'dropset', parentSetId: 'a', side: null },
+    ];
+    const ghosts = buildGhostSets(previous);
+    expect(ghosts.map((g) => [g.weightKg, g.reps, g.parentIndex])).toEqual([
+      [20, 8, null],
+      [20, 10, null],
+      [10, 12, 0],
+    ]);
+    expect(ghosts.map((g) => g.index)).toEqual([0, 1, 2]);
+  });
+});

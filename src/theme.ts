@@ -60,7 +60,7 @@ export const size = {
 // unreconciled 20–25% canvas figure. Top bar and bottom slab are fixed dp;
 // the remainder splits by this ratio.
 export const liveZoneFlex = {
-  yellow: 44,
+  yellow: 40,
   lime: 18,
   canvas: 38,
 } as const;

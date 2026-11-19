@@ -34,9 +34,13 @@ export interface SessionDetailExercise {
   exerciseName: string;
   isBodyweight: boolean;
   sets: {
+    id: string;
     weightKg: number;
     reps: number;
     setType: typeof setEntry.$inferSelect.setType;
+    // Left/right tracking — see src/domain/sidePairs.ts.
+    side: typeof setEntry.$inferSelect.side;
+    parentSetId: string | null;
   }[];
 }
 
@@ -70,7 +74,14 @@ export async function getSessionDetail(
   const result: SessionDetailExercise[] = [];
   for (const row of exerciseRows) {
     const setRows = await db
-      .select({ weightKg: setEntry.weightKg, reps: setEntry.reps, setType: setEntry.setType })
+      .select({
+        id: setEntry.id,
+        weightKg: setEntry.weightKg,
+        reps: setEntry.reps,
+        setType: setEntry.setType,
+        side: setEntry.side,
+        parentSetId: setEntry.parentSetId,
+      })
       .from(setEntry)
       .where(
         and(

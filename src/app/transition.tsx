@@ -9,6 +9,7 @@ import type { FlashOverlayHandle } from '@/components/ui';
 import { NumericKeypad } from '@/components/transition/NumericKeypad';
 import { ExitRecapModal, type RecapSection } from '@/components/transition/ExitRecapModal';
 import { DayExercisePicker, type DayExerciseItem } from '@/components/transition/DayExercisePicker';
+import { SideSplitScreen, type SideField } from '@/components/transition/SideSplitScreen';
 import { ExercisePicker } from '@/components/exercise/ExercisePicker';
 import { runBackupRetention } from '@/data/backup';
 import { useDatabase } from '@/data/DatabaseProvider';
@@ -24,16 +25,19 @@ import { endSession, getActiveSession } from '@/data/repositories/sessionReposit
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
 import {
   createSet,
+  joinSides,
   listHistoricalWeightsForExercise,
   listSetsBySessionExercise,
   softDeleteSet,
+  splitSetIntoSides,
   updateSet,
 } from '@/data/repositories/setRepository';
 import { getUser } from '@/data/repositories/userRepository';
 import type { exercise as exerciseTable, session as sessionTable, setEntry as setEntryTable } from '@/data/schema';
 import type { AppDatabase } from '@/data/types';
 import { buildGhostSets, resolveFallbackSet, type GhostSet, type SetType } from '@/domain/ghostPrefill';
-import { deriveLoadDisplay } from '@/domain/loadConvention';
+import { deriveLoadDisplay, deriveSplitLoadDisplay } from '@/domain/loadConvention';
+import { pairSides, supportsSideSplit, type Side } from '@/domain/sidePairs';
 import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
 import { orderRowsForDisplay } from '@/domain/setRowOrdering';
 import { didCrossInterval } from '@/domain/stopwatch';
@@ -72,6 +76,9 @@ interface MergedRow {
   reps: number;
   setType: SetType;
   parentIndex: number | null;
+  // The right side when this committed set is split into left/right
+  // (src/domain/sidePairs.ts); weightKg/reps above are then the left side.
+  right: CommittedSet | null;
 }
 
 function round2(value: number): number {
@@ -175,7 +182,25 @@ function TransitionScreen({
   }, [stopwatch.elapsedMs, stopwatch.isRunning, flashIntervalMs]);
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
+  // One entry per logical set, in storage order. A left/right split set's
+  // 'right' row is not in here — it lives in rightSets, keyed by the left
+  // row's id — so committedSets[i] is still display row i, as it always was.
+  // Stored `index` values are no longer necessarily equal to the position
+  // (a right row takes the next index when it's created), so new rows get
+  // nextSetIndex(), never committedSets.length.
   const [committedSets, setCommittedSets] = useState<CommittedSet[]>([]);
+  const [rightSets, setRightSets] = useState<Map<string, CommittedSet>>(() => new Map());
+  // Mirrors for the split screen's queued writes, which must read the
+  // latest values rather than a stale render's.
+  const committedRef = useRef(committedSets);
+  const rightRef = useRef(rightSets);
+  useEffect(() => {
+    committedRef.current = committedSets;
+  }, [committedSets]);
+  useEffect(() => {
+    rightRef.current = rightSets;
+  }, [rightSets]);
+  const [splitRowIndex, setSplitRowIndex] = useState<number | null>(null);
   const [ghostSets, setGhostSets] = useState<GhostSet[]>([]);
   const [weightStep, setWeightStep] = useState(DEFAULT_WEIGHT_STEP_KG);
   const [loaded, setLoaded] = useState(false);
@@ -221,7 +246,10 @@ function TransitionScreen({
   // picker). Remembered as the committed-sets array that was confirmed, so any
   // later edit — which always produces a new array — invalidates it and the
   // recap comes back for the changed log.
-  const [recapConfirmedFor, setRecapConfirmedFor] = useState<CommittedSet[] | null>(null);
+  const [recapConfirmedFor, setRecapConfirmedFor] = useState<{
+    sets: CommittedSet[];
+    rights: Map<string, CommittedSet>;
+  } | null>(null);
 
   useEffect(() => {
     // Nothing to load without a current exercise — the render below checks
@@ -238,7 +266,14 @@ function TransitionScreen({
       ]);
       if (cancelled) return;
 
-      setCommittedSets([...existingSets].sort((a, b) => a.index - b.index));
+      const pairs = pairSides([...existingSets].sort((a, b) => a.index - b.index));
+      const primary = pairs.map((p) => p.set);
+      const rights = new Map<string, CommittedSet>();
+      for (const p of pairs) if (p.right) rights.set(p.set.id, p.right);
+      committedRef.current = primary;
+      rightRef.current = rights;
+      setCommittedSets(primary);
+      setRightSets(rights);
       if (previousSessionExercise) {
         const previousSets = await listSetsBySessionExercise(db, userId, previousSessionExercise.id);
         if (!cancelled) setGhostSets(buildGhostSets(previousSets));
@@ -278,6 +313,7 @@ function TransitionScreen({
           reps: set.reps,
           setType: set.setType,
           parentIndex: parentIndex >= 0 ? parentIndex : null,
+          right: rightSets.get(set.id) ?? null,
         });
       } else {
         const ghost = ghostSets[i] ?? { weightKg: fallback.weightKg, reps: fallback.reps, setType: 'working' as const, parentIndex: null };
@@ -288,11 +324,12 @@ function TransitionScreen({
           reps: ghost.reps,
           setType: ghost.setType,
           parentIndex: ghost.parentIndex,
+          right: null,
         });
       }
     }
     return rows;
-  }, [committedSets, ghostSets, setsDone, fallback]);
+  }, [committedSets, rightSets, ghostSets, setsDone, fallback]);
 
   const displayOrder = useMemo(
     () => orderRowsForDisplay(mergedRows.map((r) => ({ index: r.rowIndex, parentIndex: r.parentIndex }))),
@@ -300,12 +337,21 @@ function TransitionScreen({
   );
   const rowsByIndex = useMemo(() => new Map(mergedRows.map((r) => [r.rowIndex, r])), [mergedRows]);
 
+  // Next free stored index: past every row in this exercise, right-side rows
+  // included (see the committedSets comment above).
+  function nextSetIndex(primary: CommittedSet[]): number {
+    let max = -1;
+    for (const s of primary) max = Math.max(max, s.index);
+    for (const s of rightRef.current.values()) max = Math.max(max, s.index);
+    return max + 1;
+  }
+
   async function commitNewSet(input: { weightKg: number; reps: number; setType: SetType; parentSetId: string | null }) {
     if (!sessionExerciseId) return null;
     const created = await createSet(db, {
       userId,
       sessionExerciseId,
-      index: committedSets.length,
+      index: nextSetIndex(committedSets),
       weightKg: input.weightKg,
       reps: input.reps,
       setType: input.setType,
@@ -333,8 +379,8 @@ function TransitionScreen({
   // values. Shared by the single-row edit path (commitThrough) and item 6's
   // "copy set 1 to all" (every row gets the same patch at once).
   async function commitRowsThrough(maxIndex: number, patches: Map<number, { weightKg?: number; reps?: number; setType?: SetType }>) {
-    if (!sessionExerciseId) return committedSets;
-    let local = committedSets;
+    if (!sessionExerciseId) return committedRef.current;
+    let local = committedRef.current;
     for (let i = 0; i <= maxIndex; i++) {
       const row = rowsByIndex.get(i);
       if (!row) continue;
@@ -350,7 +396,7 @@ function TransitionScreen({
       const created = await createSet(db, {
         userId,
         sessionExerciseId,
-        index: local.length,
+        index: nextSetIndex(local),
         weightKg: patch?.weightKg ?? row.weightKg,
         reps: patch?.reps ?? row.reps,
         setType: patch?.setType ?? row.setType,
@@ -366,6 +412,7 @@ function TransitionScreen({
         if (patch) recordSetCompletion(exercise?.name ?? '', created.index);
       }
     }
+    committedRef.current = local;
     setCommittedSets(local);
     return local;
   }
@@ -396,7 +443,9 @@ function TransitionScreen({
     const patches = new Map<number, { weightKg: number; reps: number }>();
     for (let i = 1; i < mergedRows.length; i++) {
       const row = rowsByIndex.get(i);
-      if (!row || row.parentIndex != null) continue;
+      // A left/right split set keeps its own per-side values — copying a
+      // shared value onto just its left row would make the pair inconsistent.
+      if (!row || row.parentIndex != null || row.right) continue;
       patches.set(i, { weightKg: first.weightKg, reps: first.reps });
     }
     await commitRowsThrough(mergedRows.length - 1, patches);
@@ -574,8 +623,99 @@ function TransitionScreen({
   function handleRemoveLastSet() {
     const last = committedSets[committedSets.length - 1];
     if (!last) return;
-    void softDeleteSet(db, userId, last.id).then(() => {
+    const right = rightSets.get(last.id) ?? null;
+    void (async () => {
+      // A split set goes as a whole — both sides, still soft deletes.
+      if (right) {
+        await softDeleteSet(db, userId, right.id);
+        const next = new Map(rightRef.current);
+        next.delete(last.id);
+        rightRef.current = next;
+        setRightSets(next);
+      }
+      await softDeleteSet(db, userId, last.id);
       setCommittedSets((prev) => prev.slice(0, -1));
+    })();
+  }
+
+  // ── Left/right split screen (src/components/transition/SideSplitScreen.tsx)
+  // Writes are queued so a held stepper's rapid repeats can't race — in
+  // particular, so the first change can't create two right rows. Each op
+  // reads the latest values from the refs, not from the render it was
+  // queued in.
+  const sideQueueRef = useRef<Promise<void>>(Promise.resolve());
+  function enqueueSideOp(op: () => Promise<void>) {
+    sideQueueRef.current = sideQueueRef.current.then(op).catch(() => undefined);
+  }
+
+  function replaceCommitted(updated: CommittedSet) {
+    const next = committedRef.current.map((s) => (s.id === updated.id ? updated : s));
+    committedRef.current = next;
+    setCommittedSets(next);
+  }
+
+  function replaceRight(leftId: string, right: CommittedSet | null) {
+    const next = new Map(rightRef.current);
+    if (right) next.set(leftId, right);
+    else next.delete(leftId);
+    rightRef.current = next;
+    setRightSets(next);
+  }
+
+  // Splitting needs a real row to tag: a still-ghost row (and any ghost rows
+  // ahead of it) is committed first with what it shows, exactly as editing
+  // it on the logging screen would.
+  async function ensureCommitted(rowIndex: number): Promise<CommittedSet | null> {
+    if (rowIndex < committedRef.current.length) return committedRef.current[rowIndex] ?? null;
+    const local = await commitRowsThrough(rowIndex, new Map([[rowIndex, {}]]));
+    return local[rowIndex] ?? null;
+  }
+
+  function changeSide(rowIndex: number, side: Side, compute: (current: { weightKg: number; reps: number }) => { weightKg?: number; reps?: number }) {
+    enqueueSideOp(async () => {
+      const set = await ensureCommitted(rowIndex);
+      if (!set) return;
+      const right = rightRef.current.get(set.id) ?? null;
+      // Unsplit, both sides show the one shared value.
+      const current = side === 'right' && right ? right : set;
+      const patch = compute({ weightKg: current.weightKg, reps: current.reps });
+      if (!right) {
+        const rightValues = side === 'right' ? { weightKg: patch.weightKg ?? set.weightKg, reps: patch.reps ?? set.reps } : { weightKg: set.weightKg, reps: set.reps };
+        const result = await splitSetIntoSides(db, userId, set.id, rightValues, side === 'left' ? patch : {});
+        if (!result) return;
+        replaceCommitted(result.left);
+        replaceRight(set.id, result.right);
+        return;
+      }
+      const updated = await updateSet(db, userId, side === 'left' ? set.id : right.id, patch);
+      if (!updated) return;
+      if (side === 'left') replaceCommitted(updated);
+      else replaceRight(set.id, updated);
+    });
+  }
+
+  function handleSideStep(side: Side, field: SideField, direction: 1 | -1) {
+    if (splitRowIndex == null) return;
+    changeSide(splitRowIndex, side, (v) =>
+      field === 'weight' ? { weightKg: round2(Math.max(0, v.weightKg + direction * weightStep)) } : { reps: Math.max(0, v.reps + direction) },
+    );
+  }
+
+  function handleSideSetValue(side: Side, field: SideField, value: number) {
+    if (splitRowIndex == null) return;
+    changeSide(splitRowIndex, side, () => (field === 'weight' ? { weightKg: Math.max(0, value) } : { reps: Math.max(0, Math.round(value)) }));
+  }
+
+  function handleJoinSides() {
+    if (splitRowIndex == null) return;
+    const rowIndex = splitRowIndex;
+    enqueueSideOp(async () => {
+      const set = committedRef.current[rowIndex];
+      const right = set ? (rightRef.current.get(set.id) ?? null) : null;
+      if (!set || !right) return;
+      const joined = await joinSides(db, userId, set.id, right.id);
+      replaceRight(set.id, null);
+      if (joined) replaceCommitted(joined);
     });
   }
 
@@ -587,8 +727,8 @@ function TransitionScreen({
   // the final array so callers can build a recap from it without waiting on
   // React state to re-render.
   async function finalizeRemainingSets(): Promise<CommittedSet[]> {
-    if (!sessionExerciseId) return committedSets;
-    let local = committedSets;
+    if (!sessionExerciseId) return committedRef.current;
+    let local = committedRef.current;
     for (let i = local.length; i < mergedRows.length; i++) {
       const row = rowsByIndex.get(i);
       if (!row) continue;
@@ -596,7 +736,7 @@ function TransitionScreen({
       const created = await createSet(db, {
         userId,
         sessionExerciseId,
-        index: local.length,
+        index: nextSetIndex(local),
         weightKg: row.weightKg,
         reps: row.reps,
         setType: row.setType,
@@ -606,6 +746,7 @@ function TransitionScreen({
       });
       if (created) local = [...local, created];
     }
+    committedRef.current = local;
     setCommittedSets(local);
     return local;
   }
@@ -638,7 +779,7 @@ function TransitionScreen({
     // up" state with no exercise picked) — there's nothing to recap, so go
     // straight to picking the next exercise instead of showing an empty
     // confirmation screen.
-    if (!sessionExerciseId || !exerciseId || !exercise || recapConfirmedFor === committedSets) {
+    if (!sessionExerciseId || !exerciseId || !exercise || (recapConfirmedFor?.sets === committedSets && recapConfirmedFor.rights === rightSets)) {
       openNextExercisePicker();
       return;
     }
@@ -646,7 +787,9 @@ function TransitionScreen({
     setRecapSections([
       {
         name: exercise?.name ?? '',
-        shorthand: formatSessionExerciseShorthand(finalSets, exercise?.loadConvention === 'bodyweight') || '—',
+        // Right-side rows ride along so a split set shows both sides.
+        shorthand:
+          formatSessionExerciseShorthand([...finalSets, ...rightRef.current.values()], exercise?.loadConvention === 'bodyweight') || '—',
       },
     ]);
     setRecapMode('exercise');
@@ -679,7 +822,7 @@ function TransitionScreen({
     setRecapMode(null);
     if (mode === 'end') void finishSession();
     else if (mode === 'exercise') {
-      setRecapConfirmedFor(committedSets);
+      setRecapConfirmedFor({ sets: committedSets, rights: rightSets });
       openNextExercisePicker();
     }
   }
@@ -689,7 +832,24 @@ function TransitionScreen({
   }
 
   const exerciseName = (exercise?.name ?? strings.sessionNoExerciseLabel).toUpperCase();
-  let topLevelCounter = 0;
+  // Same numbering the rows show: top-level sets count up, drop sets get
+  // the drop marker. Shared with the split screen's title.
+  const setLabels = new Map<number, string>();
+  {
+    let topLevelCounter = 0;
+    for (const rowIndex of displayOrder) {
+      const row = rowsByIndex.get(rowIndex);
+      if (!row) continue;
+      if (row.parentIndex == null) {
+        topLevelCounter += 1;
+        setLabels.set(rowIndex, String(topLevelCounter));
+      } else {
+        setLabels.set(rowIndex, strings.setDropSetMarker);
+      }
+    }
+  }
+  const canSplitSides = exercise ? supportsSideSplit(exercise.loadConvention, exercise.equipmentType) : false;
+  const splitRow = splitRowIndex != null ? (rowsByIndex.get(splitRowIndex) ?? null) : null;
 
   return (
     <View style={styles.outer}>
@@ -723,14 +883,16 @@ function TransitionScreen({
                   const row = rowsByIndex.get(rowIndex);
                   if (!row) return null;
                   const isDropSet = row.parentIndex != null;
-                  if (!isDropSet) topLevelCounter += 1;
-                  const display = deriveLoadDisplay(exercise.loadConvention, exercise.equipmentType, row.weightKg);
+                  // Invariant 8: a split set's derived total is left + right.
+                  const display = row.right
+                    ? deriveSplitLoadDisplay(exercise.equipmentType, row.weightKg, row.right.weightKg)
+                    : deriveLoadDisplay(exercise.loadConvention, exercise.equipmentType, row.weightKg);
                   const isLastCommitted = !row.isGhost && row.rowIndex === committedSets.length - 1;
 
                   return (
                     <SetInputRow
                       key={row.rowIndex}
-                      setLabel={isDropSet ? strings.setDropSetMarker : String(topLevelCounter)}
+                      setLabel={setLabels.get(row.rowIndex) ?? ''}
                       weightKg={row.weightKg}
                       reps={row.reps}
                       confirmed={!row.isGhost}
@@ -747,6 +909,14 @@ function TransitionScreen({
                       onTapReps={() => handleTapReps(row)}
                       onAddDropSet={!row.isGhost && row.setType === 'working' ? () => handleAddDropSet(row) : undefined}
                       onRemove={isLastCommitted ? handleRemoveLastSet : undefined}
+                      onOpenSplit={
+                        canSplitSides && !isDropSet && row.setType !== 'warmup' ? () => setSplitRowIndex(row.rowIndex) : undefined
+                      }
+                      split={
+                        row.right
+                          ? { leftKg: row.weightKg, leftReps: row.reps, rightKg: row.right.weightKg, rightReps: row.right.reps }
+                          : null
+                      }
                     />
                   );
                 })
@@ -827,6 +997,22 @@ function TransitionScreen({
         onConfirm={handleKeypadConfirm}
         onCancel={() => setKeypadTarget(null)}
       />
+
+      {exercise && splitRow ? (
+        <SideSplitScreen
+          visible
+          setLabel={setLabels.get(splitRow.rowIndex) ?? ''}
+          left={{ weightKg: splitRow.weightKg, reps: splitRow.reps }}
+          right={splitRow.right ? { weightKg: splitRow.right.weightKg, reps: splitRow.right.reps } : { weightKg: splitRow.weightKg, reps: splitRow.reps }}
+          isSplit={splitRow.right != null}
+          confirmed={!splitRow.isGhost}
+          equipmentType={exercise.equipmentType}
+          onStep={handleSideStep}
+          onSetValue={handleSideSetValue}
+          onJoin={handleJoinSides}
+          onClose={() => setSplitRowIndex(null)}
+        />
+      ) : null}
 
       <ExitRecapModal
         visible={recapMode != null}

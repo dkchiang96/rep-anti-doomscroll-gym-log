@@ -4,6 +4,7 @@
 
 import { and, eq, isNull } from 'drizzle-orm';
 
+import { collapseToWeakerSide } from '../../domain/sidePairs';
 import { sessionExercise, setEntry } from '../schema';
 import type { AppDatabase } from '../types';
 import { createTemplate } from './templateRepository';
@@ -50,8 +51,11 @@ export async function createTemplateFromSession(
       .from(setEntry)
       .where(and(eq(setEntry.sessionExerciseId, se.id), eq(setEntry.userId, userId), isNull(setEntry.deletedAt)));
 
-    const working = sets.filter((s) => s.setType === 'working');
-    const basis = working.length > 0 ? working : sets;
+    // A left/right split set is one set (src/domain/sidePairs.ts), judged
+    // by its weaker side.
+    const logical = collapseToWeakerSide([...sets].sort((a, b) => a.index - b.index));
+    const working = logical.filter((s) => s.setType === 'working');
+    const basis = working.length > 0 ? working : logical;
     const targetSets = Math.max(working.length, 1);
     const targetRepsMin = basis.length > 0 ? Math.min(...basis.map((s) => s.reps)) : 1;
     const targetRepsMax = basis.length > 0 ? Math.max(...basis.map((s) => s.reps)) : 1;

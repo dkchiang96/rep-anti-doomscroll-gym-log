@@ -45,6 +45,8 @@ export const strings = {
   sessionWarmDownHint: 'Cool down, then end your workout',
   sessionWarmDownEndLabel: 'End workout',
   sessionRecentRoundsHeading: 'Last 3 rounds',
+  // Read-only flag under the last 3 rounds (src/domain/progressReadiness.ts).
+  sessionReadyToProgress: 'Hit top of range twice — consider adding load',
   sessionTransportStartLabel: 'Start',
   sessionTransportPauseLabel: 'Pause',
   sessionNextExerciseLabel: 'Next exercise',
@@ -294,6 +296,19 @@ export const strings = {
   setInputBodyweightGlyph: 'BW',
   setInputStepperMinus: '−',
   setInputStepperPlus: '+',
+  // Left/right tracking (src/domain/sidePairs.ts): the per-row button that
+  // opens the split screen, and a split set's read-only summary on the
+  // logging screen.
+  setInputSplitButton: 'L / R',
+  setInputSplitSummary: (leftKg: number, leftReps: number, rightKg: number, rightReps: number) =>
+    `L ${leftKg} × ${leftReps}   R ${rightKg} × ${rightReps}`,
+  setInputSplitEditHint: 'Tap to edit sides',
+  sideSplitTitle: (setLabel: string) => `Set ${setLabel} — left / right`,
+  sideSplitHint: 'Saved as you change it. Untouched, the set stays one shared value.',
+  sideSplitLeftLabel: 'Left',
+  sideSplitRightLabel: 'Right',
+  sideSplitJoinButton: 'Make even again',
+  sideSplitBackButton: 'Back to sets',
 
   showcaseTopBarTitle: 'Showcase',
   showcaseExerciseName: 'Incline Dumbbell Press',

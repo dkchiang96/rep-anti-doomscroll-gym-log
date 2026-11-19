@@ -7,6 +7,7 @@ import m0002 from './0002_rich_spitfire.sql';
 import m0003 from './0003_ambitious_bloodaxe.sql';
 import m0004 from './0004_volatile_king_bedlam.sql';
 import m0005 from './0005_crazy_guardian.sql';
+import m0006 from './0006_rapid_maggott.sql';
 
   export default {
     journal,
@@ -16,7 +17,8 @@ m0001,
 m0002,
 m0003,
 m0004,
-m0005
+m0005,
+m0006
     }
   }
   

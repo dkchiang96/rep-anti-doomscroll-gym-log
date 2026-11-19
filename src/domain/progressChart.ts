@@ -5,9 +5,13 @@
 // re-touching it here is exactly how PRD risk P4 (an artificial 50% drop at
 // a convention change) would sneak back in.
 
+import { collapseToWeakerSide, type SideTaggable } from './sidePairs';
+
 export type ChartSetType = 'working' | 'warmup' | 'dropset' | 'failure';
 
-export interface ChartSet {
+// A left/right split set (sidePairs.ts) counts once, at its weaker side, so
+// the chart never overstates progress.
+export interface ChartSet extends SideTaggable {
   weightKg: number;
   reps: number;
   setType: ChartSetType;
@@ -41,7 +45,7 @@ export function buildProgressPoints(entries: ProgressSessionEntry[]): ProgressPo
   const points: ProgressPoint[] = [];
 
   for (const entry of entries) {
-    const candidates = entry.sets.filter((s) => s.setType !== 'warmup');
+    const candidates = collapseToWeakerSide(entry.sets).filter((s) => s.setType !== 'warmup');
     if (candidates.length === 0) continue;
 
     let best = candidates[0];

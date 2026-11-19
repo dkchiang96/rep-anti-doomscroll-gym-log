@@ -189,6 +189,13 @@ export const setEntry = sqliteTable('set', {
   }).notNull(),
   // Not a DB-level FK: points at another row in this same table (the set a drop set follows).
   parentSetId: text('parent_set_id'),
+  // Left/right tracking for unilateral per_side lifts. Null = one shared
+  // (bilateral) value, which every set logged before this column existed is.
+  // A split set is two rows: the original row tagged 'left', and a 'right'
+  // row appended after the exercise's other sets whose parentSetId points
+  // at the left row (same attachment mechanism drop sets use). See
+  // src/domain/sidePairs.ts.
+  side: text('side', { enum: ['left', 'right'] }),
   restAfterSeconds: integer('rest_after_seconds'),
   completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),

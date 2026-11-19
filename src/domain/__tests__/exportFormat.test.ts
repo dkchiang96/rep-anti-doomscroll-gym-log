@@ -9,6 +9,10 @@ describe('deriveTotalKg', () => {
     expect(deriveTotalKg('total', 80)).toBe(80);
     expect(deriveTotalKg('bodyweight', 0)).toBe(0);
   });
+
+  it('adds left and right for a split set', () => {
+    expect(deriveTotalKg('per_side', 20, 17.5)).toBe(37.5);
+  });
 });
 
 describe('buildSetCsv', () => {
@@ -29,9 +33,19 @@ describe('buildSetCsv', () => {
     const csv = buildSetCsv([baseRow]);
     const lines = csv.split('\n');
     expect(lines[0]).toBe(
-      'date,session_note,exercise,muscle_group,equipment_type,load_convention,weight_kg,total_kg,reps,set_type',
+      'date,session_note,exercise,muscle_group,equipment_type,load_convention,weight_kg,total_kg,reps,set_type,side',
     );
-    expect(lines[1]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,45,8,working');
+    expect(lines[1]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,45,8,working,');
+  });
+
+  it('exports side and gives both rows of a split pair the left + right total', () => {
+    const left: ExportSetRow = { ...baseRow, setId: 'L', side: 'left', parentSetId: null, weightKg: 22.5, reps: 10 };
+    const plain: ExportSetRow = { ...baseRow, setId: 'P', side: null, parentSetId: null, weightKg: 22.5, reps: 8 };
+    const right: ExportSetRow = { ...baseRow, setId: 'R', side: 'right', parentSetId: 'L', weightKg: 20, reps: 9 };
+    const lines = buildSetCsv([left, plain, right]).split('\n');
+    expect(lines[1]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,42.5,10,working,left');
+    expect(lines[2]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,22.5,45,8,working,');
+    expect(lines[3]).toBe('2026-08-16,,Incline dumbbell press,Chest,dumbbell,per_side,20,42.5,9,working,right');
   });
 
   it('quotes fields containing commas, quotes, or newlines', () => {

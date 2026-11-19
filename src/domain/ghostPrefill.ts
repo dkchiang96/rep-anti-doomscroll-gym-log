@@ -3,7 +3,9 @@
 // (patterns repeat), drop sets included and still attached to their
 // preceding working set.
 
-export type SetType = 'working' | 'warmup' | 'dropset' | 'failure';
+import { pairSides, weakerSide, type Side } from './sidePairs';
+
+export type SetType ='working' | 'warmup' | 'dropset' | 'failure';
 
 export interface PreviousSet {
   id: string;
@@ -12,6 +14,7 @@ export interface PreviousSet {
   reps: number;
   setType: SetType;
   parentSetId: string | null;
+  side?: Side | null;
 }
 
 export interface GhostSet {
@@ -25,18 +28,26 @@ export interface GhostSet {
   parentIndex: number | null;
 }
 
+// A left/right split set from last time pre-fills as one ordinary (unsplit)
+// row at its weaker side — the side the user starts on — so the logging
+// screen stays the same unless they choose to split again.
 export function buildGhostSets(previousSets: PreviousSet[]): GhostSet[] {
-  const ordered = [...previousSets].sort((a, b) => a.index - b.index);
-  const positionById = new Map(ordered.map((s, i) => [s.id, i]));
+  const sorted = [...previousSets].sort((a, b) => a.index - b.index);
+  const pairs = pairSides(sorted);
+  const positionById = new Map(pairs.map((p, i) => [p.set.id, i]));
 
-  return ordered.map((s, i) => ({
-    sourceSetId: s.id,
-    index: i,
-    weightKg: s.weightKg,
-    reps: s.reps,
-    setType: s.setType,
-    parentIndex: s.parentSetId != null ? (positionById.get(s.parentSetId) ?? null) : null,
-  }));
+  return pairs.map((pair, i) => {
+    const s = pair.set;
+    const values = weakerSide(pair);
+    return {
+      sourceSetId: s.id,
+      index: i,
+      weightKg: values.weightKg,
+      reps: values.reps,
+      setType: s.setType,
+      parentIndex: s.parentSetId != null ? (positionById.get(s.parentSetId) ?? null) : null,
+    };
+  });
 }
 
 // Punch-list item 6: a row with no real ghost data behind it (no previous

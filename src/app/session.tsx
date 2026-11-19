@@ -20,6 +20,7 @@ import { getUser } from '@/data/repositories/userRepository';
 import type { session as sessionTable } from '@/data/schema';
 import type { EquipmentType, LoadConvention } from '@/domain/loadConvention';
 import { formatSessionExerciseShorthand } from '@/domain/keepShorthand';
+import { isReadyToProgress } from '@/domain/progressReadiness';
 import { didCrossInterval } from '@/domain/stopwatch';
 import { useAttachStopwatch, useStopwatch } from '@/state/stopwatchStore';
 import { useFlashPreferenceStore } from '@/state/flashPreferenceStore';
@@ -231,6 +232,10 @@ function LiveSessionScreen({
   // deciding what to target — excludes the current (still-empty at this
   // point) session.
   const [recentRounds, setRecentRounds] = useState<{ sessionId: string; label: string }[]>([]);
+  // Read-only nudge (src/domain/progressReadiness.ts): the last two sessions
+  // both hit the top of the target range at one weight. Needs a target, so
+  // never shows for freestyle/ad-hoc exercises.
+  const [readyToProgress, setReadyToProgress] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -240,15 +245,15 @@ function LiveSessionScreen({
       const history = exercise ? await listSessionHistoryForExercise(db, userId, exercise.id) : [];
       if (cancelled) return;
       const isBodyweight = exercise?.loadConvention === 'bodyweight';
-      const rounds = history
-        .filter((entry) => entry.sessionId !== session.id)
-        .slice(-3)
-        .reverse()
+      const previous = history.filter((entry) => entry.sessionId !== session.id).reverse();
+      const rounds = previous
+        .slice(0, 3)
         .map((entry) => ({
           sessionId: entry.sessionId,
           label: `${formatRecentRoundDate(entry.startedAt)} — ${formatSessionExerciseShorthand(entry.sets, isBodyweight) || '—'}`,
         }));
       setRecentRounds(rounds);
+      setReadyToProgress(exercise?.target ? isReadyToProgress(previous, exercise.target.repsMax) : false);
     })();
     return () => {
       cancelled = true;
@@ -404,10 +409,21 @@ function LiveSessionScreen({
           <View style={styles.recentRoundsStrip}>
             <Text style={[type.caption, styles.recentRoundsHeading]}>{strings.sessionRecentRoundsHeading}</Text>
             {recentRounds.map((round) => (
-              <Text key={round.sessionId} style={[type.caption, styles.recentRoundsLine]} numberOfLines={1}>
+              <Text
+                key={round.sessionId}
+                style={[type.heading, tabularNums, styles.recentRoundsLine]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+              >
                 {round.label}
               </Text>
             ))}
+            {readyToProgress ? (
+              <Text style={[type.label, styles.readyToProgressLine]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {strings.sessionReadyToProgress}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -495,20 +511,26 @@ const styles = StyleSheet.create({
     color: color.danger,
     textAlign: 'center',
   },
-  // Item 8: a compact, deliberately small-type strip — a glance while
-  // deciding what to target, not a sixth zone competing with the numerals
-  // DESIGN-SPEC.md §5.1 reserves as the largest element on this screen.
+  // Item 8: a glance while deciding what to target. The lines are heading-
+  // size white (readable from the bench without picking the phone up — see
+  // docs/PROGRESS.md 2026-11-19); the small muted heading keeps it reading
+  // as reference, and the clock stays the largest element (§5.1).
   recentRoundsStrip: {
     width: '100%',
     backgroundColor: color.bg,
     paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingVertical: 8,
   },
   recentRoundsHeading: {
     color: color.textMuted,
   },
   recentRoundsLine: {
-    color: color.textMuted,
+    color: color.textPrimary,
+  },
+  // §2's confirmed/completed accent — a positive nudge, not a warning.
+  readyToProgressLine: {
+    color: color.slabSecondary,
+    marginTop: 2,
   },
   canvas: {
     width: '100%',

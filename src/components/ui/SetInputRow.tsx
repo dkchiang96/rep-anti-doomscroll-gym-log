@@ -33,6 +33,10 @@ type SetInputRowProps = {
   onTapReps?: () => void;
   onAddDropSet?: () => void;
   onRemove?: () => void;
+  /** Left/right tracking: shows the L / R button, which opens the split screen. */
+  onOpenSplit?: () => void;
+  /** Set when this set is split into left/right — the row then shows a read-only summary instead of steppers. */
+  split?: { leftKg: number; leftReps: number; rightKg: number; rightReps: number } | null;
 };
 
 export function SetInputRow({
@@ -54,6 +58,8 @@ export function SetInputRow({
   onTapReps,
   onAddDropSet,
   onRemove,
+  onOpenSplit,
+  split = null,
 }: SetInputRowProps) {
   const valueColor = confirmed ? color.textPrimary : color.textMuted;
   const bodyweightOn = bodyweightRelevant && weightKg === 0;
@@ -62,7 +68,35 @@ export function SetInputRow({
     <View style={[styles.root, indent ? styles.indent : null, disabled ? styles.disabled : null]}>
       <View style={styles.headerRow}>
         <Text style={[type.caption, styles.headerLabel]}>{setLabel}</Text>
+        {onOpenSplit ? (
+          <Pressable
+            onPress={onOpenSplit}
+            disabled={disabled}
+            style={[styles.splitToggle, split ? styles.splitToggleOn : null]}
+          >
+            <Text style={[type.caption, { color: split ? color.onSlab : color.textPrimary }]}>
+              {strings.setInputSplitButton}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
+
+      {split ? (
+        // A left/right split set: one read-only summary line, edited only on
+        // the split screen, so the everyday row stays exactly as it was.
+        <Pressable onPress={onOpenSplit} disabled={!onOpenSplit || disabled} style={styles.splitSummaryTouch}>
+          <Text
+            style={[type.heading, tabularNums, { color: valueColor }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+          >
+            {strings.setInputSplitSummary(split.leftKg, split.leftReps, split.rightKg, split.rightReps)}
+          </Text>
+          <Text style={[type.caption, styles.headerLabel]}>{strings.setInputSplitEditHint}</Text>
+        </Pressable>
+      ) : (
+        <>
 
       {/* Weight and reps controls stack vertically, each getting the row's
           full width — DESIGN-SPEC §5.7's side-by-side mock doesn't leave
@@ -135,6 +169,8 @@ export function SetInputRow({
           disabled={disabled}
         />
       </View>
+        </>
+      )}
 
       <View style={styles.metaRow}>
         <Text style={[type.caption, styles.conventionLabel]} numberOfLines={1}>
@@ -176,9 +212,28 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   headerLabel: {
     color: color.textMuted,
+  },
+  splitToggle: {
+    minWidth: size.minTouchTarget,
+    minHeight: size.minTouchTarget,
+    paddingHorizontal: 8,
+    borderWidth: 2,
+    borderColor: color.divider,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitToggleOn: {
+    backgroundColor: color.slabSecondary,
+    borderColor: color.slabSecondary,
+  },
+  splitSummaryTouch: {
+    minHeight: size.minTouchTarget * 2,
+    justifyContent: 'center',
+    marginTop: 4,
   },
   groupCaption: {
     color: color.textMuted,

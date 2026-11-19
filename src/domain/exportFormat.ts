@@ -4,6 +4,7 @@
 // spreadsheets; JSON is a structured dump of the full relational log.
 
 import type { EquipmentType, LoadConvention } from './loadConvention';
+import { splitTotalKg, type Side } from './sidePairs';
 
 export interface ExportSetRow {
   sessionId: string;
@@ -16,12 +17,35 @@ export interface ExportSetRow {
   weightKg: number;
   reps: number;
   setType: 'working' | 'warmup' | 'dropset' | 'failure';
+  // Left/right tracking (sidePairs.ts). Optional so rows built without them
+  // behave as unsplit, which is what every pre-existing set is.
+  setId?: string;
+  parentSetId?: string | null;
+  side?: Side | null;
 }
 
 // Mirrors FR-3.12's derived total: per_side doubles the stored weight,
-// everything else is already the full load.
-export function deriveTotalKg(convention: LoadConvention, weightKg: number): number {
+// everything else is already the full load. A left/right split set's total
+// is left + right instead (partnerWeightKg = the other side's weight).
+export function deriveTotalKg(convention: LoadConvention, weightKg: number, partnerWeightKg: number | null = null): number {
+  if (partnerWeightKg != null) return splitTotalKg({ weightKg }, { weightKg: partnerWeightKg });
   return convention === 'per_side' ? weightKg * 2 : weightKg;
+}
+
+// For each row of a split pair, the other side's weight; null for unsplit
+// rows (or a side whose partner isn't in the export).
+function partnerWeights(rows: ExportSetRow[]): Map<ExportSetRow, number> {
+  const byId = new Map<string, ExportSetRow>();
+  for (const row of rows) if (row.setId) byId.set(row.setId, row);
+  const result = new Map<ExportSetRow, number>();
+  for (const row of rows) {
+    if (row.side !== 'right' || !row.parentSetId) continue;
+    const left = byId.get(row.parentSetId);
+    if (!left || left.side !== 'left') continue;
+    result.set(row, left.weightKg);
+    result.set(left, row.weightKg);
+  }
+  return result;
 }
 
 function csvEscape(value: string | number): string {
@@ -44,10 +68,14 @@ const CSV_HEADER = [
   'total_kg',
   'reps',
   'set_type',
+  'side',
 ];
 
+// On a split pair, both rows carry the pair's left + right total — summing
+// total_kg over a spreadsheet column counts a split set twice.
 export function buildSetCsv(rows: ExportSetRow[]): string {
   const lines = [CSV_HEADER.join(',')];
+  const partners = partnerWeights(rows);
   for (const row of rows) {
     lines.push(
       [
@@ -58,9 +86,10 @@ export function buildSetCsv(rows: ExportSetRow[]): string {
         row.equipmentType,
         row.loadConvention,
         row.weightKg,
-        deriveTotalKg(row.loadConvention, row.weightKg),
+        deriveTotalKg(row.loadConvention, row.weightKg, partners.get(row) ?? null),
         row.reps,
         row.setType,
+        row.side ?? '',
       ].join(','),
     );
   }

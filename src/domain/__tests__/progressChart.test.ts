@@ -84,3 +84,21 @@ describe('filterLastNDays', () => {
     expect(filterLastNDays(entries, now, 10)).toHaveLength(1);
   });
 });
+
+describe('buildProgressPoints — left/right split sets', () => {
+  it('uses the weaker side of a split set as its top-set value', () => {
+    const points = buildProgressPoints([
+      {
+        sessionId: 's1',
+        startedAt: new Date('2026-01-01T12:00:00Z'),
+        sets: [
+          { id: 'a', weightKg: 25, reps: 8, setType: 'working', side: 'left', parentSetId: null },
+          { id: 'b', weightKg: 22.5, reps: 10, setType: 'working', side: null, parentSetId: null },
+          { id: 'r', weightKg: 20, reps: 8, setType: 'working', side: 'right', parentSetId: 'a' },
+        ],
+      },
+    ]);
+    expect(points[0].topWeightKg).toBe(22.5);
+    expect(points[0].reps).toBe(10);
+  });
+});

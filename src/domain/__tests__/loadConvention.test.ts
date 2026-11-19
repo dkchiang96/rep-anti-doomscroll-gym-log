@@ -1,4 +1,4 @@
-import { deriveLoadDisplay } from '../loadConvention';
+import { deriveLoadDisplay, deriveSplitLoadDisplay } from '../loadConvention';
 
 describe('deriveLoadDisplay', () => {
   it('shows PER DUMBBELL with a doubled total for a dumbbell exercise', () => {
@@ -31,5 +31,12 @@ describe('deriveLoadDisplay', () => {
 
   it('rounds the derived total to 2 decimal places', () => {
     expect(deriveLoadDisplay('per_side', 'dumbbell', 12.525).totalLine).toBe('25.05 kg total');
+  });
+});
+
+describe('deriveSplitLoadDisplay', () => {
+  it('keeps the per-side label and totals left + right', () => {
+    expect(deriveSplitLoadDisplay('dumbbell', 20, 17.5)).toEqual({ conventionLabel: 'PER DUMBBELL', totalLine: '37.5 kg total' });
+    expect(deriveSplitLoadDisplay('cable', 10, 10).conventionLabel).toBe('PER SIDE');
   });
 });

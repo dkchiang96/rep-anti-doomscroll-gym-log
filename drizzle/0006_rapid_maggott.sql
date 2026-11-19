@@ -1,0 +1,1 @@
+ALTER TABLE `set` ADD `side` text;

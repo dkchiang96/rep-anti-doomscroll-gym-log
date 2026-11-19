@@ -39,3 +39,13 @@ export function deriveLoadDisplay(
   }
   return { conventionLabel: label, totalLine: null };
 }
+
+// A left/right split set (sidePairs.ts — per_side only): each side's value
+// keeps the per_side label, and the derived total is left + right rather
+// than weight × 2.
+export function deriveSplitLoadDisplay(equipmentType: EquipmentType, leftKg: number, rightKg: number): LoadDisplay {
+  return {
+    conventionLabel: conventionLabel('per_side', equipmentType),
+    totalLine: `${formatKg(leftKg + rightKg)} kg total`,
+  };
+}
