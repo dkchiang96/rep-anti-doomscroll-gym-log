@@ -55,6 +55,10 @@ export const strings = {
   // Free-text warm-up / warm-down from the programme day, shown on the timer
   // screen's warm-up and warm-down states.
   sessionWarmUpNoteHeading: "Today's warm-up",
+  // The programme's note for the current exercise (ProgrammeNoteCard).
+  programmeNoteHeading: 'Programme note',
+  programmeNoteDismiss: 'Got it',
+  programmeNoteChip: 'Note',
   // Cardio lap timer (src/components/ui/LapButton.tsx).
   lapStartLabel: 'Start lap',
   lapStopLabel: 'Stop lap',

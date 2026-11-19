@@ -818,3 +818,18 @@ Not a numbered session. Three requests, built after the author confirmed: notes 
 - An exercise with nothing logged has nothing to rate, so it isn't asked. Ending from the timer screen still doesn't write the timer's sets-done tally as sets; that only happens on the logging screen, and is unchanged behaviour.
 - `ExitRecapModal` content now scrolls if it would overflow, since the end recap can carry the session note plus this RPE prompt.
 - Checks: typecheck, 225 tests, lint and the Android export pass. Not run on a device.
+
+## 2026-11-19 — feature: programme notes on the timer screen
+
+Requested after reviewing a real programme file: `template_exercise.notes` (starting weights, "set 4 left only", "burpee weeks only", swap rules) was imported but never shown anywhere. The author asked for it to be "elegant, or a pop-out that stays hidden after I read it". Built inline, since DESIGN-SPEC rules out modals.
+
+- **First visit:** the first time you reach an exercise in a session, the timer screen shows its note in a card under the green target box. The card is dark with a lime left edge, the text is in body type, and it scrolls inside itself past about six lines so the clock and transport controls stay put.
+- **After reading:** **Got it** folds the card away into a small **NOTE** chip at the right of the top bar. Tap the chip to open the note again.
+- **Read state** is kept per session_exercise in an in-memory store (`src/state/noteReadStore.ts`), the same tradeoff as `flashPreferenceStore`. After an app restart, a note opens once more.
+- **Not shown in:**
+  - the warm-down state
+  - exercises that aren't on today's day (they have no programme note)
+  - the logging screen
+- **Programme-level `notes`** are still not shown during a workout.
+- **No schema change, so no new migration.** It still ships in the same EAS build as the 0006/0007 migrations.
+- **Checks:** typecheck, 225 tests, lint and the Android export pass. Not run on a device.

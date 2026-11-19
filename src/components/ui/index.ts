@@ -5,6 +5,7 @@ export { FontGate, useClockMetrics } from './FontGate';
 export { LapButton } from './LapButton';
 export { ListRow, type ListRowProps } from './ListRow';
 export { NoteInput } from './NoteInput';
+export { ProgrammeNoteCard, ProgrammeNoteChip } from './ProgrammeNoteCard';
 export { RpePicker } from './RpePicker';
 export { SetInputRow } from './SetInputRow';
 export { Slab } from './Slab';

@@ -9,6 +9,8 @@ import {
   Clock,
   FlashOverlay,
   LapButton,
+  ProgrammeNoteCard,
+  ProgrammeNoteChip,
   Slab,
   TransportButton,
   TransportResetButton,
@@ -36,6 +38,7 @@ import { progressAdvice, type ProgressAdvice } from '@/domain/progressReadiness'
 import { didCrossInterval } from '@/domain/stopwatch';
 import { useAttachStopwatch, useStopwatch } from '@/state/stopwatchStore';
 import { useFlashPreferenceStore } from '@/state/flashPreferenceStore';
+import { useNoteReadStore } from '@/state/noteReadStore';
 import { strings } from '@/strings';
 import { color, liveZoneFlex, size, tabularNums, type } from '@/theme';
 
@@ -64,6 +67,8 @@ type CurrentExercise = {
   kind: ExerciseKind;
   /** Cardio only: what each round records. */
   track: CardioMetric[] | null;
+  /** The programme's note for this exercise on today's day (template_exercise.notes). */
+  programmeNote: string | null;
   // Null when the exercise was picked mid-session (R5's exercise picker) and
   // isn't part of the active template — the lime slab falls back to the
   // FREESTYLE label in that case, same as a templateless session. The
@@ -195,6 +200,7 @@ export default function LiveSession() {
             barWeightKg: ex.barWeightKg,
             kind: ex.kind,
             track: ex.track,
+            programmeNote: templateExercise?.notes?.trim() ? templateExercise.notes.trim() : null,
             target: overrideTarget ?? (templateExercise
               ? {
                   sets: templateExercise.targetSets,
@@ -501,6 +507,13 @@ function LiveSessionScreen({
   // Distinct from the top bar's session-level title (which legitimately
   // reads FREESTYLE for a templateless session) — reusing the same word here
   // for "no exercise picked yet" read as a duplicated/broken label.
+  // Programme note: open the first time this exercise is reached in the
+  // session, folded into the top bar's NOTE chip once dismissed.
+  const programmeNote = warmDown ? null : (exercise?.programmeNote ?? null);
+  const noteRead = useNoteReadStore((s) => (exercise ? s.readIds[exercise.sessionExerciseId] === true : false));
+  const markNoteRead = useNoteReadStore((s) => s.markRead);
+  const markNoteUnread = useNoteReadStore((s) => s.markUnread);
+
   const exerciseName = (warmDown ? strings.sessionWarmDownLabel : (exercise?.name ?? strings.sessionNoExerciseLabel)).toUpperCase();
 
   return (
@@ -512,10 +525,13 @@ function LiveSessionScreen({
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, programmeNote ? styles.topBarWithChip : null]}>
           <Text style={[type.heading, styles.topBarTitle]} numberOfLines={1}>
             {title.toUpperCase()}
           </Text>
+          {programmeNote && noteRead && exercise ? (
+            <ProgrammeNoteChip onPress={() => markNoteUnread(exercise.sessionExerciseId)} />
+          ) : null}
         </View>
 
         <Slab tone="primary" flex={liveZoneFlex.yellow}>
@@ -548,6 +564,10 @@ function LiveSessionScreen({
             <Text style={[type.label, styles.onSlabText]}>{strings.sessionNoTargetLabel.toUpperCase()}</Text>
           )}
         </Slab>
+
+        {programmeNote && !noteRead && exercise ? (
+          <ProgrammeNoteCard note={programmeNote} onDismiss={() => markNoteRead(exercise.sessionExerciseId)} />
+        ) : null}
 
         {recentRounds.length > 0 ? (
           <View style={styles.recentRoundsStrip}>
@@ -675,6 +695,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
+  },
+  // Leaves room for the NOTE chip at the right without the centred title
+  // running underneath it.
+  topBarWithChip: {
+    paddingHorizontal: 80,
   },
   topBarTitle: {
     color: color.textPrimary,
