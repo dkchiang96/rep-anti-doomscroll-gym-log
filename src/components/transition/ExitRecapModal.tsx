@@ -1,6 +1,7 @@
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { NoteInput } from '@/components/ui/NoteInput';
+import { RpePicker } from '@/components/ui/RpePicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { strings } from '@/strings';
@@ -8,10 +9,10 @@ import { color, size, type } from '@/theme';
 
 // Item 2 — a blocking recap shown right before either exit route (leaving an
 // exercise for the next one, or ending the workout) actually takes effect,
-// so a logging mistake surfaces before it's sealed. No ScrollView by design
-// — the whole point is a single glance, not another list to scroll through;
-// typical session sizes (a handful of exercises) fit a phone screen at
-// caption size without one.
+// so a logging mistake surfaces before it's sealed. Still meant as a single
+// glance — typical session sizes fit a phone screen at caption size — but
+// the end recap now also carries a session note (and sometimes an RPE
+// prompt), so the content scrolls only if it would otherwise overflow.
 
 export type RecapSection = {
   name: string;
@@ -27,13 +28,16 @@ type ExitRecapModalProps = {
   onBack: () => void;
   /** End-of-workout recap only: the optional session note, written as you type. */
   sessionNote?: { initialValue: string; onChange: (text: string) => void };
+  /** Ending from the timer screen: the current exercise's required RPE, when it has logged sets but no RPE yet. */
+  rpe?: { exerciseName: string; value: number | null; missing: boolean; onChange: (rpe: number) => void };
 };
 
-export function ExitRecapModal({ visible, title, sections, confirmLabel, onConfirm, onBack, sessionNote }: ExitRecapModalProps) {
+export function ExitRecapModal({ visible, title, sections, confirmLabel, onConfirm, onBack, sessionNote, rpe }: ExitRecapModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onBack}>
       <View style={styles.backdrop}>
         <SafeAreaView style={styles.sheet} edges={['top', 'bottom']}>
+          <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
           <Text style={[type.heading, styles.title]}>{title.toUpperCase()}</Text>
 
           <View style={styles.sectionList}>
@@ -52,6 +56,13 @@ export function ExitRecapModal({ visible, title, sections, confirmLabel, onConfi
               ))
             )}
           </View>
+
+          {rpe ? (
+            <View style={styles.noteBlock}>
+              <Text style={[type.label, styles.sectionName]}>{strings.recapRpeHeading(rpe.exerciseName)}</Text>
+              <RpePicker value={rpe.value} onChange={rpe.onChange} missing={rpe.missing} />
+            </View>
+          ) : null}
 
           {sessionNote ? (
             <View style={styles.noteBlock}>
@@ -72,6 +83,7 @@ export function ExitRecapModal({ visible, title, sections, confirmLabel, onConfi
               <Text style={[type.label, styles.confirmLabel]}>{confirmLabel}</Text>
             </Pressable>
           </View>
+          </ScrollView>
         </SafeAreaView>
       </View>
     </Modal>
@@ -85,8 +97,12 @@ const styles = StyleSheet.create({
   },
   sheet: {
     flex: 1,
+  },
+  sheetContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
+    paddingVertical: 16,
   },
   title: {
     color: color.textPrimary,

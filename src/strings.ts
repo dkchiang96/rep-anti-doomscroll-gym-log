@@ -67,6 +67,9 @@ export const strings = {
 
   recapExerciseTitle: 'Confirm this exercise',
   recapEndTitle: 'Confirm end of workout',
+  // Ending from the timer screen skips the logging screen, so the current
+  // exercise's required RPE is asked for on the end recap instead.
+  recapRpeHeading: (exerciseName: string) => `RPE for ${exerciseName.toUpperCase()}`,
   recapExerciseConfirmButton: 'Confirm',
   recapEndConfirmButton: 'End workout',
   recapBackButton: 'Go back',

@@ -22,7 +22,7 @@ import { getExerciseById } from '@/data/repositories/exerciseRepository';
 import { getSessionDetail } from '@/data/repositories/historyRepository';
 import { getProgrammeById } from '@/data/repositories/programmeRepository';
 import { listSessionHistoryForExercise } from '@/data/repositories/progressRepository';
-import { getSessionExerciseById } from '@/data/repositories/sessionExerciseRepository';
+import { getSessionExerciseById, updateSessionExercise } from '@/data/repositories/sessionExerciseRepository';
 import { endSession, getActiveSession, updateSession } from '@/data/repositories/sessionRepository';
 import { cancelCardioLap, listSetsBySessionExercise, startCardioLap, stopCardioLap } from '@/data/repositories/setRepository';
 import { listTemplateExercisesByTemplate } from '@/data/repositories/templateExerciseRepository';
@@ -340,8 +340,23 @@ function LiveSessionScreen({
     disarmTimeoutRef.current = setTimeout(() => setEndArmed(false), 4000);
   }
 
+  // RPE is required per exercise (src/components/ui/RpePicker.tsx), normally
+  // on the logging screen. Ending straight from this screen skips that, so
+  // when the current exercise already has logged sets (e.g. cardio laps)
+  // but no RPE, the end recap asks for it and won't confirm without it.
+  // An exercise with nothing logged has nothing to rate.
+  const [recapRpe, setRecapRpe] = useState<{ value: number | null; missing: boolean } | null>(null);
+
+  function handleRecapRpeChange(value: number) {
+    if (!exercise) return;
+    setRecapRpe({ value, missing: false });
+    void updateSessionExercise(db, userId, exercise.sessionExerciseId, { rpe: value });
+  }
+
   async function openEndRecap() {
     const detail = await getSessionDetail(db, userId, session.id);
+    const current = exercise && !warmDown ? detail.find((ex) => ex.sessionExerciseId === exercise.sessionExerciseId) : undefined;
+    setRecapRpe(current && current.sets.length > 0 && current.rpe == null ? { value: null, missing: false } : null);
     setRecapSections(
       detail.map((ex) => ({
         name: ex.exerciseName,
@@ -384,6 +399,10 @@ function LiveSessionScreen({
   );
 
   async function handleRecapConfirm() {
+    if (recapRpe && recapRpe.value == null) {
+      setRecapRpe({ value: null, missing: true });
+      return;
+    }
     setRecapOpen(false);
     void cancelRestNotifications();
     await endSession(db, userId, session.id);
@@ -631,6 +650,11 @@ function LiveSessionScreen({
         onConfirm={() => void handleRecapConfirm()}
         onBack={() => setRecapOpen(false)}
         sessionNote={{ initialValue: sessionNote, onChange: handleSessionNoteChange }}
+        rpe={
+          recapRpe && exercise
+            ? { exerciseName: exercise.name, value: recapRpe.value, missing: recapRpe.missing, onChange: handleRecapRpeChange }
+            : undefined
+        }
       />
     </View>
   );

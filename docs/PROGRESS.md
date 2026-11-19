@@ -796,7 +796,7 @@ Not a numbered session. Three requests, built after the author confirmed: notes 
 - **Created only by import:** cardio stations come in through programme import. Exercises created in-app are strength.
 
 **Known gaps**
-- Ending a workout from the *timer* screen doesn't ask for the current exercise's RPE (that exercise hasn't been through the logging screen yet), so its RPE stays null.
+- ~~Ending a workout from the *timer* screen doesn't ask for the current exercise's RPE.~~ Fixed the same day, see the follow-up below.
 - The manual remap picker can still map a cardio entry onto a strength exercise.
 
 **Deviation from the plan:** the plan said three commits, one per feature. The three features share files (schema, migration, both screens, export), so it's two commits instead: the prompt doc, then the app changes.
@@ -811,3 +811,10 @@ Not a numbered session. Three requests, built after the author confirmed: notes 
   - RPE blocking NEXT EXERCISE
   - the session note on the end recap
   - the CSV columns
+
+### 2026-11-19 follow-up — RPE when ending from the timer screen
+
+- Ending a workout from the timer screen (long-press NEXT EXERCISE → confirm) skips the logging screen. If the current exercise already has logged sets but no RPE (in practice, cardio laps), the end recap now shows an RPE picker for it. CONFIRM won't end the workout until RPE is set: the prompt turns red, and RPE is written to `session_exercise` on tap.
+- An exercise with nothing logged has nothing to rate, so it isn't asked. Ending from the timer screen still doesn't write the timer's sets-done tally as sets; that only happens on the logging screen, and is unchanged behaviour.
+- `ExitRecapModal` content now scrolls if it would overflow, since the end recap can carry the session note plus this RPE prompt.
+- Checks: typecheck, 225 tests, lint and the Android export pass. Not run on a device.
